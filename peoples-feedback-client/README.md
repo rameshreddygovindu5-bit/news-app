@@ -1,53 +1,23 @@
 # Peoples Feedback — News Client
 
-Public-facing news website. Reads from the news-platform-final API.
+Public news website deployed on EC2 (`i-0e448dd106cf9aeed`).
 
-## Quick Start (Development)
+## Deploy (automatic)
+Every push to `main` triggers GitHub Actions → builds → deploys to EC2.
+
+### One-time setup:
+1. SSH into EC2: `ssh -i key.pem ubuntu@<EC2_IP>`
+2. Run: `sudo bash setup-ec2.sh`
+3. Add GitHub Secrets (repo → Settings → Secrets):
+   - `EC2_HOST` = EC2 public IP
+   - `EC2_USER` = `ubuntu`
+   - `EC2_SSH_KEY` = contents of your .pem file
+   - `VITE_API_URL` = `http://<EC2_IP>:8005`
+4. Push to `main` → auto-deploys
+
+### Local dev:
 ```bash
 npm install
-npm run dev        # → http://localhost:3001
+npm run dev   # http://localhost:3001
 ```
-Backend must be running on port 8005 (auto-proxied by Vite).
-
-## Build for Production
-```bash
-VITE_API_URL=http://your-api-server:8005 npm run build
-npx serve -s dist  # test locally
-```
-
-## Deploy to AWS (auto on every git push)
-1. Run `./setup-aws.sh` once to create the S3 bucket
-2. Add GitHub Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `VITE_API_URL`
-3. Push to `main` — GitHub Actions builds and deploys automatically
-
-## Hostinger DNS
-Add CNAME record: `www` → `peoples-feedback-news.s3-website.ap-south-1.amazonaws.com`
-
-## Project Structure
-```
-src/
-├── App.tsx                    — Routes
-├── main.tsx                   — Entry point
-├── index.css                  — Tailwind + custom styles
-├── types/news.ts              — Types + display helpers
-├── lib/
-│   ├── api.ts                 — API client (flags=A,Y only)
-│   ├── queryClient.ts         — React Query config
-│   ├── share.ts               — Social sharing
-│   └── utils.ts               — Tailwind merge
-├── pages/
-│   ├── Home.tsx               — Homepage with news grid
-│   ├── News.tsx               — Category/search with pagination
-│   ├── NewsDetail.tsx          — Article detail + related
-│   └── NotFound.tsx
-├── components/
-│   ├── news/
-│   │   ├── PremiumHeader.tsx  — Nav + categories + search
-│   │   ├── PremiumFooter.tsx  — Footer + newsletter
-│   │   ├── NewsLayout.tsx     — News grid + hero + sidebar
-│   │   └── ShareMenu.tsx      — Share buttons
-│   └── ui/                    — Radix UI primitives
-└── hooks/
-    ├── useDebounce.ts
-    └── use-toast.ts
-```
+Backend must be running on port 8005.
