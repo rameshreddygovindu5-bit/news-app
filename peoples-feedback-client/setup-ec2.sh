@@ -14,7 +14,7 @@ DEPLOY_DIR="/var/www/peoples-feedback"
 API_BACKEND="http://127.0.0.1:8005"
 
 log "═══════════════════════════════════════"
-log "  Peoples Feedback — EC2 Setup (AL2023)"
+log "  Peoples Feedback — EC2 Setup"
 log "═══════════════════════════════════════"
 
 # Detection
@@ -41,7 +41,7 @@ log "  ✓ Portalpro removed"
 log "Step 2: Installing Nginx..."
 if [ "$OS" == "amzn" ]; then
     dnf update -y -q
-    dnf install -y -q nginx curl
+    dnf install -y -q nginx
     WWW_USER="nginx"
     NGINX_CONF_DIR="/etc/nginx/conf.d"
 else
@@ -98,12 +98,9 @@ server {
 "
 
 if [ "$OS" == "amzn" ]; then
-    # In Amazon Linux, we put it in conf.d
     echo "$NGINX_CONFIG" > /etc/nginx/conf.d/peoples-feedback.conf
-    # Ensure default server doesn't conflict
     sed -i 's/listen       80 default_server;/listen       80;/g' /etc/nginx/nginx.conf 2>/dev/null || true
 else
-    # In Ubuntu, we use sites-available/enabled
     echo "$NGINX_CONFIG" > /etc/nginx/sites-available/peoples-feedback
     rm -f /etc/nginx/sites-enabled/default
     ln -sf /etc/nginx/sites-available/peoples-feedback /etc/nginx/sites-enabled/
@@ -113,13 +110,7 @@ nginx -t
 systemctl restart nginx
 log "  ✓ Nginx configured and restarted"
 
-# ── Step 5: Firewall ──
-if command -v ufw >/dev/null; then
-    ufw allow 80/tcp 2>/dev/null || true
-    ufw allow 22/tcp 2>/dev/null || true
-fi
-
+# ── Done ──
 log "═══════════════════════════════════════════════════════"
 log "  ✅ Setup complete for $OS!"
-log "  Next: Add GitHub Secrets (EC2_USER will be $(whoami))"
 log "═══════════════════════════════════════════════════════"
