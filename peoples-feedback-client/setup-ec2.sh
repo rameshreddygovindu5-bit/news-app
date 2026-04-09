@@ -14,7 +14,7 @@ DEPLOY_DIR="/var/www/peoples-feedback"
 API_BACKEND="http://127.0.0.1:8005"
 
 log "═══════════════════════════════════════"
-log "  Peoples Feedback — EC2 Setup"
+log "  Peoples Feedback — EC2 Setup (Fixed)"
 log "═══════════════════════════════════════"
 
 # Detection
@@ -40,8 +40,8 @@ log "  ✓ Portalpro removed"
 # ── Step 2: Install Nginx ──
 log "Step 2: Installing Nginx..."
 if [ "$OS" == "amzn" ]; then
-    dnf update -y -q
-    dnf install -y -q nginx
+    # --allowerasing fixes the curl-minimal vs curl conflict in AL2023
+    dnf install -y -q nginx --allowerasing
     WWW_USER="nginx"
     NGINX_CONF_DIR="/etc/nginx/conf.d"
 else
