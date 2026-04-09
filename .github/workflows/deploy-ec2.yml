@@ -36,9 +36,16 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER }}
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
+          # Validate secrets
+          if [ -z "$EC2_HOST" ]; then echo "❌ Error: EC2_HOST secret is missing"; exit 1; fi
+          if [ -z "$EC2_USER" ]; then echo "❌ Error: EC2_USER secret is missing"; exit 1; fi
+          if [ -z "$SSH_KEY" ]; then echo "❌ Error: EC2_SSH_KEY secret is missing"; exit 1; fi
+
           # Write SSH key
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/ec2.pem
+          # Ensure there is a newline at the end of the key (common PEM issue)
+          sed -i '$a\' ~/.ssh/ec2.pem
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
           
