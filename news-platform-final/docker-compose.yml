@@ -1,0 +1,96 @@
+version: "3.9"
+
+services:
+#   db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: newsagg
+#       POSTGRES_USER: newsadmin
+#       POSTGRES_PASSWORD: newspass123
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+#       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U newsadmin -d newsagg"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8005:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      # db:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  celery_worker:
+    build: ./backend
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      # db:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  celery_beat:
+    build: ./backend
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      # db:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://127.0.0.1:8005
+
+volumes:
+  pgdata:
