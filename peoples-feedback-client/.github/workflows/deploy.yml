@@ -1,0 +1,82 @@
+# Auto-deploy to AWS S3 on every push to main/master
+# GitHub Secrets required:
+#   AWS_ACCESS_KEY_ID     — IAM user access key
+#   AWS_SECRET_ACCESS_KEY — IAM user secret key
+#   VITE_API_URL          — Backend API URL (e.g. http://32.193.27.142:8005)
+#
+# One-time S3 setup: Run the setup-aws.sh script in the repo root
+
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './peoples-feedback-client/package-lock.json'
+
+      - name: Install & Build
+        working-directory: ./peoples-feedback-client
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Deploy to S3
+        run: |
+          BUCKET="peoples-feedback-${{ github.repository_owner }}"
+          
+          # Create bucket if not exists
+          aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || \
+            aws s3 mb "s3://$BUCKET" --region ap-south-1
+          
+          # Enable static website hosting
+          aws s3 website "s3://$BUCKET" \
+            --index-document index.html \
+            --error-document index.html
+          
+          # Set public access policy
+          aws s3api put-public-access-block --bucket "$BUCKET" \
+            --public-access-block-configuration \
+            "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false" || true
+          
+          aws s3api put-bucket-policy --bucket "$BUCKET" --policy "{
+            \"Version\": \"2012-10-17\",
+            \"Statement\": [{
+              \"Sid\": \"PublicRead\",
+              \"Effect\": \"Allow\",
+              \"Principal\": \"*\",
+              \"Action\": \"s3:GetObject\",
+              \"Resource\": \"arn:aws:s3:::${BUCKET}/*\"
+            }]
+          }" || true
+          
+          # Sync build
+          aws s3 sync peoples-feedback-client/dist/ "s3://$BUCKET" --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+          
+          # Upload index.html with no-cache
+          aws s3 cp peoples-feedback-client/dist/index.html "s3://$BUCKET/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html"
+          
+          echo ""
+          echo "✅ Deployed to: http://${BUCKET}.s3-website.ap-south-1.amazonaws.com"
