@@ -40,7 +40,9 @@ log "  ✓ Portalpro removed"
 # ── Step 2: Install Nginx ──
 log "Step 2: Installing Nginx..."
 if [ "$OS" == "amzn" ]; then
-    # --allowerasing fixes the curl-minimal vs curl conflict in AL2023
+    # AL2023 often has conflicts between curl-minimal and the full curl package needed by dependencies
+    dnf clean all
+    dnf swap -y curl-minimal curl --allowerasing
     dnf install -y -q nginx --allowerasing
     WWW_USER="nginx"
     NGINX_CONF_DIR="/etc/nginx/conf.d"
