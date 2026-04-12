@@ -61,13 +61,14 @@ jobs:
           # Deploy on EC2
           ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'REMOTE'
             set -e
+            
+            # 1. Update Frontend
             DEPLOY_DIR="/var/www/peoples-feedback"
-
             sudo mkdir -p $DEPLOY_DIR
             sudo rm -rf $DEPLOY_DIR/*
             sudo tar xzf /tmp/dist.tar.gz -C $DEPLOY_DIR
 
-            # Set ownership (works on both Ubuntu and Amazon Linux)
+            # Set ownership
             if id "nginx" &>/dev/null; then
               sudo chown -R nginx:nginx $DEPLOY_DIR
             elif id "www-data" &>/dev/null; then
@@ -76,5 +77,30 @@ jobs:
 
             rm -f /tmp/dist.tar.gz
             sudo nginx -t && sudo systemctl reload nginx
-            echo "✅ Deploy complete: $(date)"
+            
+            # 2. Update Backend (Docker)
+            echo "Searching for news-platform-final project directory..."
+            # Try common paths, fall back to searching
+            PROJECT_DIR=$(find $HOME -type d -name "news-platform-final" -print -quit 2>/dev/null || find /var/www -type d -name "news-platform-final" -print -quit 2>/dev/null)
+            
+            if [ -n "$PROJECT_DIR" ]; then
+              echo "✅ Found project in $PROJECT_DIR. Updating..."
+              cd "$PROJECT_DIR"
+              git pull origin main || echo "⚠️ git pull failed (maybe detached head or no keys). Continuing..."
+              
+              if [ -f "docker-compose.yml" ]; then
+                echo "🚀 Restarting Docker containers..."
+                sudo docker-compose up -d --build backend celery_worker celery_beat
+              else
+                # Maybe one level up?
+                cd ..
+                if [ -f "docker-compose.yml" ]; then
+                  sudo docker-compose up -d --build backend celery_worker celery_beat
+                fi
+              fi
+            else
+              echo "⚠️ Could not find news-platform-final project directory for backend update."
+            fi
+
+            echo "✅ Full Deploy complete: $(date)"
           REMOTE
