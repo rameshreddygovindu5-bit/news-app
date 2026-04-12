@@ -12,8 +12,6 @@ name: Deploy to EC2
 on:
   push:
     branches: [main, master]
-    paths:
-      - 'peoples-feedback-client/**'
   workflow_dispatch:
 
 jobs:
