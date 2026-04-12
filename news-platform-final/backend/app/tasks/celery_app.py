@@ -215,7 +215,10 @@ def worker_scrape_source(source_id: int, run_id: str) -> Dict[str, int]:
                 if match: is_dup = True; dup_id = match[0]
             except: pass
 
-            slug = f"{re.sub(r'[^\w\s-]', '', a.title.lower()).strip().replace(' ', '-')[:100]}-{hashlib.md5(a.url.encode()).hexdigest()[:6]}"
+            # Fix for Python 3.9 (f-string cannot contain backslash in expression)
+            clean_title = re.sub(r'[^\w\s-]', '', a.title.lower()).strip().replace(' ', '-')[:100]
+            url_hash = hashlib.md5(a.url.encode()).hexdigest()[:6]
+            slug = f"{clean_title}-{url_hash}"
             new_art = NewsArticle(
                 source_id=source_id, original_title=a.title, original_content=a.content or a.title,
                 original_url=a.url, original_language=source.language or "en", published_at=a.published_at or datetime.now(timezone.utc),

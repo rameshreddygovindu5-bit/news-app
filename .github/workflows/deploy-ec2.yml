@@ -78,28 +78,35 @@ jobs:
             rm -f /tmp/dist.tar.gz
             sudo nginx -t && sudo systemctl reload nginx
             
-            # 2. Update Backend (Docker)
+            # 2. Update Backend (Python/Uvicorn)
             echo "Searching for news-platform-final project directory..."
-            # Try common paths, fall back to searching
-            PROJECT_DIR=$(find $HOME -type d -name "news-platform-final" -print -quit 2>/dev/null || find /var/www -type d -name "news-platform-final" -print -quit 2>/dev/null)
+            PROJECT_DIR=$(find $HOME -type d -name "news-platform-final" -print -quit 2>/dev/null)
             
             if [ -n "$PROJECT_DIR" ]; then
-              echo "✅ Found project in $PROJECT_DIR. Updating..."
+              echo "✅ Found project in $PROJECT_DIR. Updating code..."
               cd "$PROJECT_DIR"
-              git pull origin main || echo "⚠️ git pull failed (maybe detached head or no keys). Continuing..."
+              git pull origin main || echo "⚠️ git pull failed."
               
-              if [ -f "docker-compose.yml" ]; then
-                echo "🚀 Restarting Docker containers..."
-                sudo docker-compose up -d --build backend celery_worker celery_beat
-              else
-                # Maybe one level up?
-                cd ..
-                if [ -f "docker-compose.yml" ]; then
-                  sudo docker-compose up -d --build backend celery_worker celery_beat
-                fi
+              cd backend
+              # Kill existing process on 8005
+              PID=$(sudo lsof -t -i :8005 || true)
+              if [ -n "$PID" ]; then
+                echo "Stopping existing backend (PID: $PID)..."
+                sudo kill -9 $PID
               fi
+              
+              # Re-setup venv if missing
+              if [ ! -d "venv" ]; then
+                python3 -m venv venv
+              fi
+              
+              echo "Starting backend..."
+              source venv/bin/activate
+              pip install -r requirements.txt
+              nohup uvicorn app.main:app --host 0.0.0.0 --port 8005 > backend.log 2>&1 &
+              disown
             else
-              echo "⚠️ Could not find news-platform-final project directory for backend update."
+              echo "⚠️ Could not find project directory for backend update."
             fi
 
             echo "✅ Full Deploy complete: $(date)"
