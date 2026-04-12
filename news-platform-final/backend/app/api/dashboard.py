@@ -1,5 +1,4 @@
-"""Dashboard metrics and statistics API."""
-
+import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,122 +7,84 @@ from sqlalchemy import select, func, and_, cast, Date
 from app.database import get_db
 from app.models.models import NewsArticle, NewsSource, SchedulerLog, Category
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
 @router.get("/stats")
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
-    # Total article counts by flag
-    flag_counts = {}
-    for flag in ["P", "N", "A", "Y", "D"]:
-        result = await db.execute(
-            select(func.count(NewsArticle.id)).where(NewsArticle.flag == flag)
-        )
-        flag_counts[flag] = result.scalar() or 0
+    from app.models.models import NewsArticle, NewsSource, JobExecutionLog
+    import psycopg2
+    from app.config import get_settings
+    settings = get_settings()
 
-    total = await db.execute(select(func.count(NewsArticle.id)))
-    total_count = total.scalar() or 0
-
-    duplicates = await db.execute(
-        select(func.count(NewsArticle.id)).where(NewsArticle.is_duplicate == True)
-    )
-    dup_count = duplicates.scalar() or 0
-
-    # Source counts
-    sources_total = await db.execute(select(func.count(NewsSource.id)))
-    sources_active = await db.execute(
-        select(func.count(NewsSource.id)).where(
-            NewsSource.is_enabled == True, NewsSource.is_paused == False
-        )
-    )
-
-    # Source-wise stats
-    source_stats_q = await db.execute(
-        select(
-            NewsSource.name,
-            NewsSource.id,
-            NewsSource.is_enabled,
-            NewsSource.is_paused,
-            NewsSource.last_scraped_at,
-            func.count(NewsArticle.id).label("article_count"),
-        )
-        .outerjoin(NewsArticle, NewsArticle.source_id == NewsSource.id)
-        .group_by(NewsSource.id)
-        .order_by(func.count(NewsArticle.id).desc())
-    )
-    source_stats = [
-        {
-            "name": row[0],
-            "id": row[1],
-            "is_enabled": row[2],
-            "is_paused": row[3],
-            "last_scraped": row[4].isoformat() if row[4] else None,
-            "article_count": row[5],
-        }
-        for row in source_stats_q.all()
-    ]
-
-    # Category stats
-    cat_stats_q = await db.execute(
-        select(
-            NewsArticle.category,
-            func.count(NewsArticle.id).label("count"),
-        )
-        .where(NewsArticle.flag.in_(["A", "Y"]), NewsArticle.category.isnot(None))
-        .group_by(NewsArticle.category)
-        .order_by(func.count(NewsArticle.id).desc())
-    )
-    category_stats = [
-        {"category": row[0], "count": row[1]}
-        for row in cat_stats_q.all()
-    ]
-
-    # Recent scheduler logs
-    recent_logs_q = await db.execute(
-        select(SchedulerLog)
-        .order_by(SchedulerLog.started_at.desc())
-        .limit(10)
-    )
-    recent_logs = [
-        {
-            "id": log.id,
-            "job_type": log.job_type,
-            "status": log.status,
-            "articles_processed": log.articles_processed,
-            "started_at": log.started_at.isoformat() if log.started_at else None,
-            "duration": log.duration_seconds,
-        }
-        for log in recent_logs_q.scalars().all()
-    ]
-
-    # Daily trend (last 14 days)
-    fourteen_days_ago = datetime.now(timezone.utc) - timedelta(days=14)
-    daily_q = await db.execute(
-        select(
-            cast(NewsArticle.created_at, Date).label("day"),
-            func.count(NewsArticle.id).label("count"),
-        )
-        .where(NewsArticle.created_at >= fourteen_days_ago)
-        .group_by(cast(NewsArticle.created_at, Date))
-        .order_by(cast(NewsArticle.created_at, Date))
-    )
-    daily_trend = [
-        {"date": str(row[0]), "count": row[1]}
-        for row in daily_q.all()
-    ]
-
-    return {
-        "total_articles": total_count,
-        "pending_articles": flag_counts.get("P", 0),
-        "new_articles": flag_counts.get("N", 0),
-        "ai_processed": flag_counts.get("A", 0),
-        "top_news": flag_counts.get("Y", 0),
-        "deleted": flag_counts.get("D", 0),
-        "duplicates": dup_count,
-        "sources_count": sources_total.scalar() or 0,
-        "active_sources": sources_active.scalar() or 0,
-        "source_stats": source_stats,
-        "category_stats": category_stats,
-        "recent_scrapes": recent_logs,
-        "daily_trend": daily_trend,
+    local_stats = {
+        "total": 0, "processed": 0, "pending_ai": 0, "top": 0,
+        "pending_approval": 0, "new": 0, "failed_ai": 0
     }
+    aws_data = {"total": 0, "processed": 0, "top": 0, "status": "offline"}
+    recent_logs = []
+    category_stats = []
+    
+    debug_info = {"error": None, "trace": None}
+    # --- 1. LOCAL DATA ---
+    try:
+        flag_res = await db.execute(select(NewsArticle.flag, func.count(NewsArticle.id)).group_by(NewsArticle.flag))
+        for fl, count in flag_res.all():
+            if fl == "P": local_stats["pending_approval"] = count
+            elif fl == "N": local_stats["new"] = count
+            elif fl == "A": local_stats["processed"] += count
+            elif fl == "Y": local_stats["top"] = count; local_stats["processed"] += count
+        
+        local_stats["total"] = sum(v for k,v in local_stats.items() if k not in ["failed_ai", "processed"]) + local_stats.get("processed",0)
+        # Actually total is just sum of A, Y, P, N.
+        local_stats["total"] = local_stats["pending_approval"] + local_stats["new"] + local_stats["processed"]
+
+        ai_res = await db.execute(select(NewsArticle.ai_status, func.count(NewsArticle.id)).group_by(NewsArticle.ai_status))
+        for st, count in ai_res.all():
+            if st == "pending": local_stats["pending_ai"] = count
+            elif st == "completed": local_stats["processed"] = count
+            elif st == "failed": local_stats["failed_ai"] = count
+
+        logs_res = await db.execute(select(JobExecutionLog).order_by(JobExecutionLog.started_at.desc()).limit(10))
+        recent_logs = [{"id": l.id, "job_name": l.job_name, "status": l.status, "rows_ok": l.rows_ok, "rows_err": l.rows_err} for l in logs_res.scalars().all()]
+
+        cat_res = await db.execute(select(NewsArticle.category, func.count(NewsArticle.id)).where(NewsArticle.flag != "D").group_by(NewsArticle.category))
+        category_stats = [{"category": r[0] or "Uncategorized", "count": r[1]} for r in cat_res.all()]
+    except Exception as e:
+        import traceback
+        debug_info["error"] = str(e)
+        debug_info["trace"] = traceback.format_exc()
+        logger.error(f"Local Stats Error: {e}")
+
+    # --- 2. AWS DATA ---
+    aws_debug = None
+    try:
+        with psycopg2.connect(
+            host=settings.AWS_DB_HOST, port=settings.AWS_DB_PORT, dbname=settings.AWS_DB_NAME,
+            user=settings.AWS_DB_USER, password=settings.AWS_DB_PASSWORD, connect_timeout=3
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM news_articles WHERE flag != 'D'")
+                aws_data["total"] = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM news_articles WHERE flag IN ('A', 'Y')")
+                aws_data["processed"] = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM news_articles WHERE flag = 'Y'")
+                aws_data["top"] = cur.fetchone()[0]
+                aws_data["status"] = "online"
+    except Exception as e:
+        aws_debug = str(e)
+        logger.warning(f"AWS Stats unreachable: {e}")
+
+    final_res = {
+        "local": local_stats,
+        "aws": aws_data,
+        "recent_scrapes": recent_logs,
+        "category_stats": category_stats,
+        "sources_count": (await db.execute(select(func.count(NewsSource.id)))).scalar() or 0,
+        "active_sources": (await db.execute(select(func.count(NewsSource.id)).where(NewsSource.is_enabled==True))).scalar() or 0,
+        "debug": debug_info,
+        "aws_error": aws_debug
+    }
+    return final_res

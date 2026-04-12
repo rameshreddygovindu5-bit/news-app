@@ -93,30 +93,80 @@ function DashboardPage() {
   if(ld) return <div className="loading"><div className="spinner"/>Loading...</div>;
   if(!s) return <div className="empty-state"><p>Failed to load</p></div>;
   const CL=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899'];
-  return (<div>
-    <div className="page-header"><h2>Dashboard</h2><button className="btn btn-secondary" onClick={()=>window.location.reload()}><IC.Ref/>Refresh</button></div>
-    <div className="stats-grid">
-      {[['Total',s.total_articles,'blue'],['Pending',s.pending_articles||0,'yellow'],['New',s.new_articles,'green'],['AI Done',s.ai_processed,'blue'],['Top News',s.top_news,'purple'],['Sources',`${s.active_sources}/${s.sources_count}`,'blue']].map(([l,v,c])=>(
-        <div key={l} className={`stat-card ${c}`}><div className="stat-label">{l}</div><div className="stat-value">{v}</div></div>))}
-    </div>
-    <div className="grid-2" style={{marginBottom:24}}>
-      <div className="card"><div className="card-header"><h3>Categories</h3></div>
-        {s.category_stats.length>0?<ResponsiveContainer width="100%" height={260}><PieChart><Pie data={s.category_stats} dataKey="count" nameKey="category" cx="50%" cy="50%" outerRadius={95} label={({category,count})=>`${category}:${count}`}>{s.category_stats.map((_,i)=><Cell key={i} fill={CL[i%CL.length]}/>)}</Pie><Tooltip contentStyle={{background:'#1a2236',border:'1px solid #2a3655',borderRadius:8,color:'#e8ecf4'}}/></PieChart></ResponsiveContainer>:<div className="empty-state"><p>No data</p></div>}
+
+  return (
+    <div className="dashboard-root">
+      <div className="page-header">
+        <h2>Sync Monitor Dashboard</h2>
+        <div style={{display:'flex',gap:8}}>
+          <span className={`badge ${s.aws?.status==='online'?'badge-enabled':'badge-paused'}`} style={{padding:'8px 16px',fontSize:12}}>
+            AWS PRODUCTION: {s.aws?.status?.toUpperCase() || 'UNKNOWN'}
+          </span>
+          <button className="btn btn-secondary" onClick={()=>window.location.reload()}><IC.Ref/>Refresh</button>
+        </div>
       </div>
-      <div className="card"><div className="card-header"><h3>Daily Trend</h3></div>
-        {s.daily_trend.length>0?<ResponsiveContainer width="100%" height={260}><BarChart data={s.daily_trend}><CartesianGrid strokeDasharray="3 3" stroke="#2a3655"/><XAxis dataKey="date" tick={{fill:'#5a6478',fontSize:11}} tickFormatter={d=>d.slice(5)}/><YAxis tick={{fill:'#5a6478',fontSize:11}}/><Tooltip contentStyle={{background:'#1a2236',border:'1px solid #2a3655',borderRadius:8,color:'#e8ecf4'}}/><Bar dataKey="count" fill="#3b82f6" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>:<div className="empty-state"><p>No data</p></div>}
+      
+      <div className="grid-2" style={{marginBottom:24}}>
+        <div className="card">
+          <div className="card-header"><h3 style={{color:'var(--accent)'}}>Local Engine (Source)</h3></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,padding:20}}>
+            <div className="stat-card blue"><div className="stat-label">Total News</div><div className="stat-value">{s.local?.total || 0}</div></div>
+            <div className="stat-card green"><div className="stat-label">AI Processed</div><div className="stat-value">{s.local?.processed || 0}</div></div>
+            <div className="stat-card yellow"><div className="stat-label">AI Pending</div><div className="stat-value">{s.local?.pending_ai || 0}</div></div>
+            <div className="stat-card purple"><div className="stat-label">Top 100</div><div className="stat-value">{s.local?.top || 0}</div></div>
+          </div>
+        </div>
+        
+        <div className="card">
+          <div className="card-header"><h3 style={{color:'var(--green)'}}>AWS Production (Live)</h3></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,padding:20}}>
+            <div className="stat-card blue"><div className="stat-label">AWS Total</div><div className="stat-value">{s.aws?.total || 0}</div></div>
+            <div className="stat-card green"><div className="stat-label">AWS Processed</div><div className="stat-value">{s.aws?.processed || 0}</div></div>
+            <div className="stat-card orange"><div className="stat-label">Sync Gap</div><div className="stat-value">{(s.local?.total || 0) - (s.aws?.total || 0)}</div></div>
+            <div className="stat-card purple"><div className="stat-label">AWS Top News</div><div className="stat-value">{s.aws?.top || 0}</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid-2" style={{marginBottom:24}}>
+        <div className="card">
+          <div className="card-header"><h3>Category Distribution</h3></div>
+          <div style={{height:300}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={s.category_stats} dataKey="count" nameKey="category" cx="50%" cy="50%" outerRadius={100} label={({category})=>category}>
+                  {s.category_stats?.map((_, i) => <Cell key={i} fill={CL[i % CL.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{background:'#1a2236',border:'none',borderRadius:8,color:'#fff'}}/>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-header"><h3>Pipeline Health</h3></div>
+          <div className="table-container">
+            <table className="table">
+              <thead><tr><th>Job</th><th>Status</th><th>OK/ERR</th></tr></thead>
+              <tbody>
+                {s.recent_scrapes?.slice(0,6).map(l=><tr key={l.id}>
+                  <td style={{fontWeight:600}}>{l.job_name}</td>
+                  <td><span className={`badge ${l.status==='DONE'?'badge-enabled':l.status==='RUNNING'?'badge-new':'badge-paused'}`}>{l.status}</span></td>
+                  <td>{l.rows_ok}/{l.rows_err}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3>Raw Debug Data (Temporary)</h3></div>
+        <pre style={{fontSize:10,background:'#111',padding:10,overflow:'auto',maxHeight:200,color:'#0f0'}}>
+          {JSON.stringify(s, null, 2)}
+        </pre>
       </div>
     </div>
-    <div className="grid-2">
-      <div className="card"><div className="card-header"><h3>Sources</h3></div><div className="table-container"><table><thead><tr><th>Name</th><th>Articles</th><th>Status</th></tr></thead><tbody>
-        {s.source_stats.map(x=><tr key={x.id}><td style={{fontWeight:500}}>{x.name}</td><td>{x.article_count}</td><td>{x.is_paused?<span className="badge badge-paused">PAUSED</span>:x.is_enabled?<span className="badge badge-enabled">ACTIVE</span>:<span className="badge badge-disabled">OFF</span>}</td></tr>)}
-      </tbody></table></div></div>
-      <div className="card"><div className="card-header"><h3>Recent Jobs</h3></div><div className="table-container"><table><thead><tr><th>Type</th><th>Status</th><th>Count</th><th>Time</th></tr></thead><tbody>
-        {s.recent_scrapes.map(l=><tr key={l.id}><td style={{fontWeight:500}}>{l.job_type}</td><td><span className={`badge ${l.status==='completed'?'badge-enabled':'badge-paused'}`}>{l.status}</span></td><td>{l.articles_processed}</td><td style={{fontFamily:'var(--mono)',fontSize:11}}>{l.started_at?new Date(l.started_at).toLocaleString():'—'}</td></tr>)}
-        {s.recent_scrapes.length===0&&<tr><td colSpan="4" style={{textAlign:'center',color:'var(--text-muted)'}}>No jobs</td></tr>}
-      </tbody></table></div></div>
-    </div>
-  </div>);
+  );
 }
 
 // ===== REPORTER: SUBMIT ARTICLE =====
@@ -214,14 +264,19 @@ function ArticleDetailModal({article:a,onClose}) {
     <div className="grid-2" style={{gap:16}}>
       <div style={{background:'var(--bg-input)',padding:16,borderRadius:8,border:'1px solid var(--border-light)'}}>
         <div style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:1,marginBottom:8,fontWeight:600}}>Original</div>
+        {a.image_url && <img src={a.image_url} alt="" style={{width:'100%',borderRadius:4,marginBottom:12,maxHeight:150,objectFit:'cover'}}/>}
         <h4 style={{fontSize:15,marginBottom:12,lineHeight:1.4}}>{a.original_title}</h4>
         <div style={{fontSize:13,color:'var(--text-secondary)',lineHeight:1.7,maxHeight:300,overflowY:'auto',whiteSpace:'pre-wrap'}}>{a.original_content||'No content'}</div></div>
       <div style={{background:'var(--bg-input)',padding:16,borderRadius:8,border:'1px solid var(--accent-dim)'}}>
         <div style={{fontSize:11,color:'var(--accent)',textTransform:'uppercase',letterSpacing:1,marginBottom:8,fontWeight:600}}>AI Rephrased</div>
+        {a.image_url && <img src={a.image_url} alt="" style={{width:'100%',borderRadius:4,marginBottom:12,maxHeight:150,objectFit:'cover'}}/>}
         <h4 style={{fontSize:15,marginBottom:12,lineHeight:1.4,color:'var(--accent)'}} dangerouslySetInnerHTML={{__html:a.rephrased_title||a.original_title}}/>
         <div style={{fontSize:13,color:'var(--text-secondary)',lineHeight:1.7,maxHeight:300,overflowY:'auto'}} dangerouslySetInnerHTML={{__html:a.rephrased_content||'Not processed yet'}}/></div>
     </div>
-    {a.original_url&&<div style={{marginTop:12,fontSize:12,color:'var(--text-muted)'}}>URL: <a href={a.original_url} target="_blank" rel="noreferrer">{a.original_url}</a></div>}
+    <div style={{marginTop:12,fontSize:11,color:'var(--text-muted)',background:'var(--bg-card)',padding:8,borderRadius:4}}>
+        {a.original_url && <div><strong>Source URL:</strong> <a href={a.original_url} target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>{a.original_url}</a></div>}
+        {a.image_url && <div style={{marginTop:4}}><strong>Image URL:</strong> <a href={a.image_url} target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>{a.image_url}</a></div>}
+    </div>
   </div></div>);
 }
 
@@ -268,22 +323,35 @@ function CreateModal({onClose,onDone,sources}) {
     <div className="form-group"><label>Content</label><textarea className="form-textarea" rows={5} value={f.content} onChange={e=>setF({...f,content:e.target.value})}/></div>
     <div className="grid-2"><div className="form-group"><label>Category</label><select className="form-select" value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{CATS.map(c=><option key={c}>{c}</option>)}<option>General</option></select></div>
     <div className="form-group"><label>Source</label><select className="form-select" value={f.source_id} onChange={e=>setF({...f,source_id:e.target.value})}><option value="">— Select —</option>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div></div>
-    <div className="form-group"><label>Tags</label><input className="form-input" value={f.tags} onChange={e=>setF({...f,tags:e.target.value})}/></div>
+    <div className="form-group"><label>Tags</label><input className="form-input" value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="tag1, tag2"/></div>
+    <div className="form-group"><label>Image URL</label><input className="form-input" value={f.image_url} onChange={e=>setF({...f,image_url:e.target.value})} placeholder="https://example.com/image.jpg"/></div>
     <div className="modal-actions"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={go} disabled={sv}>{sv?'Creating...':'Create'}</button></div>
   </div></div>);
 }
 
 function EditModal({article:a,onClose,onDone}) {
-  const [f,setF]=useState({original_title:a.original_title||'',rephrased_title:a.rephrased_title||'',rephrased_content:a.rephrased_content||'',category:a.category||'General',tags:(a.tags||[]).join(', '),flag:a.flag||'N'});const [sv,setSv]=useState(false);
-  const go=async()=>{setSv(true);try{await api.updateArticle(a.id,{original_title:f.original_title,rephrased_title:f.rephrased_title,rephrased_content:f.rephrased_content,category:f.category,tags:f.tags?f.tags.split(',').map(t=>t.trim()):[],flag:f.flag});onDone()}catch{setSv(false)}};
+  const [f,setF]=useState({
+    original_title:a.original_title||'',
+    original_content:a.original_content||'',
+    rephrased_title:a.rephrased_title||'',
+    rephrased_content:a.rephrased_content||'',
+    category:a.category||'General',
+    tags:(a.tags||[]).join(', '),
+    flag:a.flag||'N',
+    image_url:a.image_url||''
+  });
+  const [sv,setSv]=useState(false);
+  const go=async()=>{setSv(true);try{await api.updateArticle(a.id,{original_title:f.original_title,original_content:f.original_content,rephrased_title:f.rephrased_title,rephrased_content:f.rephrased_content,category:f.category,tags:f.tags?f.tags.split(',').map(t=>t.trim()):[],flag:f.flag,image_url:f.image_url});onDone()}catch{setSv(false)}};
   return (<div className="modal-overlay" onClick={onClose}><div className="modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}>
     <h3>Edit #{a.id}</h3>
-    <div className="form-group"><label>Title</label><input className="form-input" value={f.original_title} onChange={e=>setF({...f,original_title:e.target.value})}/></div>
+    <div className="form-group"><label>Original Title</label><input className="form-input" value={f.original_title} onChange={e=>setF({...f,original_title:e.target.value})}/></div>
+    <div className="form-group"><label>Original Content</label><textarea className="form-textarea" rows={3} value={f.original_content} onChange={e=>setF({...f,original_content:e.target.value})}/></div>
     <div className="form-group"><label>Rephrased Title</label><input className="form-input" value={f.rephrased_title} onChange={e=>setF({...f,rephrased_title:e.target.value})}/></div>
     <div className="form-group"><label>Rephrased Content</label><textarea className="form-textarea" rows={5} value={f.rephrased_content} onChange={e=>setF({...f,rephrased_content:e.target.value})}/></div>
     <div className="grid-2"><div className="form-group"><label>Category</label><select className="form-select" value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{CATS.map(c=><option key={c}>{c}</option>)}</select></div>
     <div className="form-group"><label>Flag</label><select className="form-select" value={f.flag} onChange={e=>setF({...f,flag:e.target.value})}><option value="P">Pending</option><option value="N">New</option><option value="A">AI Done</option><option value="Y">Top</option><option value="D">Deleted</option></select></div></div>
     <div className="form-group"><label>Tags</label><input className="form-input" value={f.tags} onChange={e=>setF({...f,tags:e.target.value})}/></div>
+    <div className="form-group"><label>Image URL</label><input className="form-input" value={f.image_url} onChange={e=>setF({...f,image_url:e.target.value})} placeholder="https://example.com/image.jpg"/></div>
     <div className="modal-actions"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={go} disabled={sv}>{sv?'Saving...':'Save'}</button></div>
   </div></div>);
 }

@@ -1,237 +1,226 @@
 """
-AI Service v2.0 â€” Unified News Rephrasing & Enrichment Pipeline
+AI Service v3.0 — Production News Transformation Engine
 
-BUG FIXES from v1:
-  - Fixed missing __init__ for _anthropic / _openai clients (AttributeError)
-  - Removed broken @lru_cache on rephrase method (cached on mutable self)
-  - Fixed process_article() signature â€” now accepts **kwargs for backward compat
-  - Replaced parallel race with ordered provider chain (configurable, cost-efficient)
+Pipeline: Scrape → Detect Language → Translate to English → AI Rephrase → Categorize → Tag → Slug
 
-IMPROVEMENTS:
-  - Strengthened rephrasing prompt â€” forces structural rewrite, not light editing
-  - Professional output with proper paragraphs, key highlights, structured layout
-  - Better category mapping â€” expanded keywords, matches DB categories exactly
-  - Combined word + sequence similarity check for quality validation
-  - Per-provider retry with backoff
-  - PT team articles get AI processing too
+Providers (in order):
+  1. Google Gemini (PRIMARY) — fast, free tier
+  2. OpenAI GPT-4o-mini (FALLBACK) — reliable, paid
+  3. Fast Local Rephrase (LAST RESORT) — no API, instant
 
-PROVIDERS: Gemini, Groq, Ollama, Ollama-GLM, Anthropic, OpenAI
+Output is ALWAYS English-only, fully original, publication-ready.
 """
 
 import re
+import json
 import logging
 import time
-import traceback
 import concurrent.futures
 from typing import Optional, Dict, Tuple, List
 from difflib import SequenceMatcher
 from langdetect import detect
 
-try:
-    import ollama
-except ImportError:
-    ollama = None
-
-try:
-    import groq
-except ImportError:
-    groq = None
-
 from app.config import get_settings
+from app.services.category_service import category_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Must match exactly what's in the DB categories table
-CATEGORIES = [
-    "Home", "World", "Politics", "Business",
-    "Tech", "Science", "Health", "Entertainment", "Events"
-]
+# Sync with settings.CATEGORIES
+CATEGORIES = settings.CATEGORIES
+CATEGORIES_STR = ", ".join(CATEGORIES)
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────
 # 1. INPUT SANITIZATION
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────
 
 def sanitize_input(text: str) -> str:
     if not text:
         return ""
-    patterns = [r"(?i)ignore\s+previous\s+instructions.*", r"(?i)system\s+prompt.*"]
-    for p in patterns:
+    for p in [r"(?i)ignore\s+previous\s+instructions.*", r"(?i)system\s+prompt.*"]:
         text = re.sub(p, "", text)
     return text.strip()
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# 2. SOURCE & TAG STRIPPING
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def strip_sources(text: str) -> str:
-    patterns = [
-        r"(?i)\b(?:as\s+)?(?:reported|published|stated|featured|carried)\s+(?:by|in|on|at|exclusively\s+by)\s+(?:GreatAndhra|ANI|IANS|PTI|UNI|Eenadu|Sakshi|TV9)\b",
+    for p in [
+        r"(?i)\b(?:as\s+)?(?:reported|published|stated|featured|carried)\s+(?:by|in|on|at)\s+\w+\b",
         r"(?i)\((?:ANI|IANS|PTI|UNI|TNIE|GreatAndhra)\)",
-        r"(?i)\b(?:GreatAndhra|ANI|IANS|PTI|Eenadu|Sakshi)\b[.,]?\s*"
-    ]
-    r = text
-    for p in patterns:
-        r = re.sub(p, "", r)
-    return r.strip()
+        r"(?i)\b(?:GreatAndhra|ANI|IANS|PTI|Eenadu|Sakshi|TV9)\b[.,]?\s*",
+    ]:
+        text = re.sub(p, "", text)
+    return text.strip()
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# 3. TAG-BASED OUTPUT PARSER (STRICT)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-def parse_tags(text: str) -> Optional[dict]:
-    """Extract content from [TITLE]...[/TITLE] and [CONTENT]...[/CONTENT] tags."""
+# ─────────────────────────────────────────────
+# 2. PRODUCTION SYSTEM PROMPT (from requirements doc)
+# ─────────────────────────────────────────────
+
+SYSTEM_PROMPT = f"""You are a professional News Journalist and SEO Expert.
+Your task is to transform raw scraped news content into a COMPLETELY ORIGINAL news article.
+
+Strict Guidelines to Avoid Copyright Issues:
+1. REWRITE EVERYTHING: You must rewrite the title and content 100%. Do NOT use any phrasing from the original source.
+2. TITLE: Create a fresh, journalistic English title. Never use the original headline as is.
+3. LANGUAGE: If the input is in Telugu or any other language, translate AND rewrite it into high-quality English.
+4. STRUCTURE: 
+   - Start with a compelling opening paragraph.
+   - Use a "Key Highlights" section with a <ul> list.
+   - Use 3-5 distinct paragraphs (<p> tags).
+5. CATEGORIES: You MUST classify the article into EXACTLY ONE of these categories: {CATEGORIES_STR}.
+   - Choose the most relevant one. Use "Home" only as a last resort.
+6. NO TRACES: Remove any mentions of the original source website, reporter names, or photo credits.
+
+FINAL OUTPUT: You must respond ONLY with a clean JSON object in this format:
+{{
+  "title": "A 100% original English headline",
+  "content": "<p>Professional intro...</p><p><b>Key Highlights:</b></p><ul><li>Fact 1</li></ul><p>Detail paragraph 1...</p><p>Closing...</p>",
+  "category": "One of: {CATEGORIES_STR}",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "slug": "original-seo-friendly-slug"
+}}"""
+
+
+def build_prompt(title: str, content: str, lang_name: str) -> str:
+    t = sanitize_input(strip_sources(title))
+    c = sanitize_input(strip_sources(content))
+    return f"""SOURCE DATA:
+Language: {lang_name}
+Original Headline: {t}
+Raw Content: {c}
+
+TASK:
+1. Translate to English if needed.
+2. Rewrite the headline to be 100% unique but factually accurate.
+3. Completely rephrase the article body into professional journalistic English.
+4. Classify it strictly into one of: {CATEGORIES_STR}.
+5. Return the JSON object only."""
+
+
+# ─────────────────────────────────────────────
+# 3. OUTPUT PARSING (JSON primary, tag fallback)
+# ─────────────────────────────────────────────
+
+def parse_ai_output(text: str) -> Optional[dict]:
+    """Parse AI output — tries JSON first, then [TAG] format."""
     if not text:
         return None
 
-    title_match = re.search(r"\[TITLE\](.*?)\[/TITLE\]", text, re.DOTALL | re.IGNORECASE)
-    content_match = re.search(r"\[CONTENT\](.*?)\[/CONTENT\]", text, re.DOTALL | re.IGNORECASE)
-    category_match = re.search(r"\[CATEGORY\](.*?)\[/CATEGORY\]", text, re.DOTALL | re.IGNORECASE)
+    # Try JSON parse
+    try:
+        # Strip markdown fences
+        clean = re.sub(r'```json\s*', '', text)
+        clean = re.sub(r'```\s*', '', clean).strip()
+        # Find JSON object
+        match = re.search(r'\{[^{}]*"title"[^{}]*"content"[^{}]*\}', clean, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            if data.get("title") and data.get("content"):
+                return {
+                    "title": data["title"].strip(),
+                    "content": data["content"].strip(),
+                    "category": data.get("category", "Home").strip(),
+                    "tags": data.get("tags", []),
+                    "slug": data.get("slug", ""),
+                }
+    except (json.JSONDecodeError, AttributeError):
+        pass
 
-    if not title_match or not content_match:
-        bold_match = re.search(r"<b>(.*?)</b>", text)
-        if bold_match and content_match:
+    # Try full text as JSON
+    try:
+        data = json.loads(text.strip())
+        if isinstance(data, dict) and data.get("title") and data.get("content"):
             return {
-                "title": bold_match.group(1).strip(),
-                "content": content_match.group(1).strip(),
-                "category": "Home"
+                "title": data["title"].strip(),
+                "content": data["content"].strip(),
+                "category": data.get("category", "Home").strip(),
+                "tags": data.get("tags", []),
+                "slug": data.get("slug", ""),
             }
-        return None
+    except (json.JSONDecodeError, ValueError):
+        pass
 
-    title = title_match.group(1).strip().replace("<b>", "").replace("</b>", "")
-    content = content_match.group(1).strip()
+    # Fallback: [TAG] format
+    title_m = re.search(r"\[TITLE\](.*?)\[/TITLE\]", text, re.DOTALL | re.IGNORECASE)
+    content_m = re.search(r"\[CONTENT\](.*?)\[/CONTENT\]", text, re.DOTALL | re.IGNORECASE)
+    cat_m = re.search(r"\[CATEGORY\](.*?)\[/CATEGORY\]", text, re.DOTALL | re.IGNORECASE)
 
-    if len(title) < 5 or len(content) < 20:
-        return None
+    if title_m and content_m:
+        t = title_m.group(1).strip().replace("<b>", "").replace("</b>", "")
+        c = content_m.group(1).strip()
+        if len(t) >= 5 and len(c) >= 20:
+            return {
+                "title": t,
+                "content": c,
+                "category": cat_m.group(1).strip() if cat_m else "Home",
+                "tags": [],
+                "slug": "",
+            }
 
-    return {
-        "title": title,
-        "content": content,
-        "category": category_match.group(1).strip() if category_match else "Home"
-    }
+    return None
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# 4. SIMILARITY VALIDATION (strengthened)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-def word_similarity(a: str, b: str) -> float:
-    wa, wb = set(a.lower().split()), set(b.lower().split())
-    return len(wa & wb) / max(len(wa), len(wb)) if wa and wb else 0.0
-
-def sequence_similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+# ─────────────────────────────────────────────
+# 4. QUALITY VALIDATION
+# ─────────────────────────────────────────────
 
 def is_sufficiently_rephrased(original: str, rephrased: str) -> bool:
-    """Check that rephrased text is different enough. Uses BOTH word and sequence similarity."""
     threshold = settings.AI_SIMILARITY_THRESHOLD
-    w_sim = word_similarity(original, rephrased)
-    s_sim = sequence_similarity(original, rephrased)
-    combined = max(w_sim, s_sim)
+    orig_words = set(original.lower().split())
+    reph_words = set(rephrased.lower().split())
+    if orig_words and reph_words:
+        word_sim = len(orig_words & reph_words) / max(len(orig_words), len(reph_words))
+    else:
+        word_sim = 0.0
+    seq_sim = SequenceMatcher(None, original.lower()[:500], rephrased.lower()[:500]).ratio()
+    combined = max(word_sim, seq_sim)
     if combined > threshold:
-        logger.warning(f"[SIMILARITY] Rejected: word={w_sim:.2f}, seq={s_sim:.2f} > {threshold}")
+        logger.warning(f"[SIMILARITY] Rejected: word={word_sim:.2f}, seq={seq_sim:.2f} > {threshold}")
         return False
     return True
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# 5. SLUG GENERATION & STRENGTHENED PROFESSIONAL PROMPT
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+# ─────────────────────────────────────────────
+# 5. SLUG & TAG GENERATION
+# ─────────────────────────────────────────────
 
 def generate_slug(title: str) -> str:
-    """Generate a URL-friendly slug from a title."""
-    # Remove accents, special chars, and convert to lowercase
-    s = title.lower()
-    s = re.sub(r"[^\w\s-]", "", s)
-    s = re.sub(r"[\s_-]+", "_", s).strip("_")
-    return s
+    s = re.sub(r"[^\w\s-]", "", title.lower())
+    return re.sub(r"[\s_-]+", "-", s).strip("-")[:120]
 
-SYSTEM_PROMPT = """Act strictly as a senior professional news editor who REWRITES articles from scratch.
 
-Your task: Given a news TITLE and CONTENT, produce a COMPLETELY REWORDED, professionally structured version.
+def generate_tags(title: str, content: str, category: str) -> List[str]:
+    """Generate tags from title + content keywords."""
+    text = f"{title} {content}".lower()
+    text = re.sub(r'<[^>]+>', ' ', text)  # strip HTML
+    words = re.findall(r'\b[a-z]{3,15}\b', text)
+    # Count word frequency, exclude stop words
+    stops = {"the", "and", "for", "are", "but", "not", "you", "all", "can", "her", "was",
+             "one", "our", "out", "has", "have", "had", "this", "that", "with", "from",
+             "they", "been", "said", "will", "would", "could", "about", "which", "their",
+             "also", "more", "than", "into", "over", "such", "after", "been", "other"}
+    freq = {}
+    for w in words:
+        if w not in stops and len(w) > 3:
+            freq[w] = freq.get(w, 0) + 1
+    top = sorted(freq.items(), key=lambda x: -x[1])[:7]
+    tags = [w for w, _ in top]
+    if category.lower() not in tags:
+        tags.insert(0, category.lower())
+    return tags[:8]
 
-CRITICAL REPHRASING RULES:
-- REWRITE every sentence using entirely different words and sentence structures.
-- DO NOT copy-paste or lightly edit the original. Start fresh in your own words.
-- The meaning must be IDENTICAL but the wording must be COMPLETELY DIFFERENT.
-- Make the article more professional, clear, and reader-friendly.
 
-CRITICAL FORMATTING RULES:
-- Use <p>...</p> for each paragraph.
-- Use <ul><li>...</li></ul> for bullet points if the article has lists or multiple key points.
-- Use <b>...</b> for important names, dates, numbers, and key facts.
-- Proper paragraphs, commas, spaces, and punctuation.
-- Do NOT use markdown (**, ##, -). Only use HTML tags.
-- Do NOT return a single-line block of text.
-- Ensure high readability with clear spacing between sections.
-
-CONTENT RULES:
-1. TONE: Professional, neutral, polite, reader-friendly. No opinions or sensationalism.
-2. ACCURACY: Preserve ALL facts exactly â€” names, numbers, dates, quotes. Do NOT invent anything.
-3. CLEANUP: Remove promotional language, ads, platform mentions, filler words.
-4. ORIGINALITY: Every sentence must be structurally different from the original.
-5. LANGUAGE (STRICT):
-   - OUTPUT IN THE EXACT SAME LANGUAGE AS INPUT.
-   - Telugu input â†’ Telugu output. English input â†’ English output.
-   - DO NOT TRANSLATE.
-
-CATEGORY MAPPING (STRICT â€” pick the BEST match):
-- Home, World, Politics, Business, Tech, Science, Health, Entertainment, Events
-
-OUTPUT FORMAT (STRICT â€” NO extra text before or after):
-
-[CATEGORY]
-Pick exactly one from: Home, World, Politics, Business, Tech, Science, Health, Entertainment, Events
-[/CATEGORY]
-
-[TITLE]
-<b>Completely reworded professional title here</b>
-[/TITLE]
-
-[CONTENT]
-<p>Opening paragraph â€” professionally rewritten with different vocabulary.</p>
-<p><b>Key Highlights:</b></p>
-<ul>
-  <li>First key point reworded professionally.</li>
-  <li>Second key point reworded professionally.</li>
-  <li>Third key point if applicable.</li>
-</ul>
-<p>Detailed body paragraph with restructured sentences.</p>
-<p>Closing paragraph if needed.</p>
-[/CONTENT]"""
-
-def build_prompt(title: str, content: str, lang_name: str = "the same language as input") -> str:
-    clean_title = sanitize_input(strip_sources(title))
-    clean_content = sanitize_input(strip_sources(content))
-    return f"""The input language is {lang_name}.
-IMPORTANT: Your rewrite MUST be in {lang_name}. DO NOT translate.
-IMPORTANT: COMPLETELY REWRITE â€” do not copy or lightly edit.
-
-Original Title:
-{clean_title}
-
-Original Content:
-{clean_content}"""
-
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# 6. AI PROVIDERS â€” ordered chain
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────
+# 6. AI SERVICE CLASS
+# ─────────────────────────────────────────────
 
 class AIService:
     def __init__(self):
-        self._groq = None
         self._gemini = None
-        self._anthropic = None  # BUG FIX: was missing, caused AttributeError
-        self._openai = None     # BUG FIX: was missing, caused AttributeError
+        self._gemini_secondary = None
+        self._openai = None
 
-    # â”€â”€ Provider client properties â”€â”€
-
-    @property
-    def groq_client(self):
-        if not self._groq and settings.GROQ_API_KEY and groq:
-            try:
-                self._groq = groq.Groq(api_key=settings.GROQ_API_KEY)
-            except Exception:
-                pass
-        return self._groq
+    # ── Provider clients ──
 
     @property
     def gemini_client(self):
@@ -239,19 +228,19 @@ class AIService:
             try:
                 from google import genai
                 self._gemini = genai.Client(api_key=settings.GEMINI_API_KEY)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[GEMINI-PRIMARY] Init failed: {e}")
         return self._gemini
 
     @property
-    def anthropic_client(self):
-        if not self._anthropic and settings.ANTHROPIC_API_KEY:
+    def gemini_secondary_client(self):
+        if not self._gemini_secondary and settings.GEMINI_API_KEY_SECONDARY:
             try:
-                import anthropic
-                self._anthropic = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-            except Exception:
-                pass
-        return self._anthropic
+                from google import genai
+                self._gemini_secondary = genai.Client(api_key=settings.GEMINI_API_KEY_SECONDARY)
+            except Exception as e:
+                logger.warning(f"[GEMINI-SECONDARY] Init failed: {e}")
+        return self._gemini_secondary
 
     @property
     def openai_client(self):
@@ -259,82 +248,67 @@ class AIService:
             try:
                 import openai
                 self._openai = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[OPENAI] Init failed: {e}")
         return self._openai
 
-    # â”€â”€ Individual provider methods â”€â”€
+    # ── Ollama (LOCAL FALLBACK) ──
 
     def _rephrase_ollama(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        if not ollama or not settings.OLLAMA_MODEL:
-            return None
+        import requests
         try:
-            prompt = f"{SYSTEM_PROMPT}\n\n{build_prompt(title, content, lang_name)}"
-            resp = ollama.generate(model=settings.OLLAMA_MODEL, prompt=prompt, options={"temperature": 0.7})
-            return parse_tags(resp['response'])
+            url = f"{settings.OLLAMA_BASE_URL}/api/generate"
+            payload = {
+                "model": "llama3.2:1b",
+                "prompt": f"System: {SYSTEM_PROMPT}\n\nUser: {build_prompt(title, content, lang_name)}",
+                "stream": False,
+                "format": "json"
+            }
+            resp = requests.post(url, json=payload, timeout=120)
+            if resp.status_code == 200:
+                data = resp.json()
+                result = parse_ai_output(data.get("response", ""))
+                if result:
+                    result["method"] = "ollama"
+                    logger.info(f"[OLLAMA] ✓ Processed: {result['title'][:60]}...")
+                return result
         except Exception as e:
-            logger.warning(f"[AI] Ollama failed: {e}")
-            return None
+            logger.warning(f"[OLLAMA] Failed: {e}")
+        return None
 
-    def _rephrase_ollama_glm(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        if not ollama:
-            return None
-        try:
-            prompt = f"{SYSTEM_PROMPT}\n\n{build_prompt(title, content, lang_name)}"
-            resp = ollama.generate(model="glm-4.7-flash:latest", prompt=prompt, options={"temperature": 0.7})
-            return parse_tags(resp['response'])
-        except Exception as e:
-            logger.warning(f"[AI] Ollama-GLM failed: {e}")
-            return None
+    # ── Gemini (PRIMARY) ──
 
-    def _rephrase_groq(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        client = self.groq_client
+    def _rephrase_gemini(self, title: str, content: str, lang_name: str, use_secondary: bool = False) -> Optional[dict]:
+        client = self.gemini_secondary_client if use_secondary else self.gemini_client
+        tag = "GEMINI-SEC" if use_secondary else "GEMINI-PRI"
+        
         if not client:
             return None
         try:
-            resp = client.chat.completions.create(
-                model="llama3-70b-8192",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_prompt(title, content, lang_name)}
-                ],
-                temperature=0.7,
-                max_tokens=2048
-            )
-            return parse_tags(resp.choices[0].message.content)
-        except Exception as e:
-            logger.warning(f"[AI] Groq failed: {e}")
-            return None
-
-    def _rephrase_gemini(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        if not self.gemini_client:
-            return None
-        try:
             from google.genai import types
-            resp = self.gemini_client.models.generate_content(
-                model="gemini-flash-latest",
+            resp = client.models.generate_content(
+                model="gemini-2.0-flash",
                 contents=build_prompt(title, content, lang_name),
-                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.7)
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.7,
+                    max_output_tokens=2048,
+                ),
             )
-            return parse_tags(resp.text)
+            result = parse_ai_output(resp.text)
+            if result:
+                result["method"] = tag.lower()
+                logger.info(f"[{tag}] ✓ Processed: {result['title'][:60]}...")
+            return result
         except Exception as e:
-            logger.warning(f"[AI] Gemini failed: {e}")
+            err_str = str(e).lower()
+            if "quota" in err_str or "429" in err_str or "rate" in err_str or "limit" in err_str:
+                logger.warning(f"[{tag}] QUOTA EXCEEDED: {e}")
+                raise  # Re-raise so rephrase_with_providers catches and falls through
+            logger.warning(f"[{tag}] Failed: {e}")
             return None
 
-    def _rephrase_anthropic(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        if not self.anthropic_client:
-            return None
-        try:
-            resp = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-latest",
-                max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": build_prompt(title, content, lang_name)}]
-            )
-            return parse_tags(resp.content[0].text)
-        except Exception as e:
-            logger.warning(f"[AI] Anthropic failed: {e}")
-            return None
+    # ── OpenAI (FALLBACK) ──
 
     def _rephrase_openai(self, title: str, content: str, lang_name: str) -> Optional[dict]:
         if not self.openai_client:
@@ -344,234 +318,199 @@ class AIService:
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_prompt(title, content, lang_name)}
+                    {"role": "user", "content": build_prompt(title, content, lang_name)},
                 ],
-                temperature=0.7
+                temperature=0.7,
+                max_tokens=2048,
+                response_format={"type": "json_object"},
             )
-            return parse_tags(resp.choices[0].message.content)
+            result = parse_ai_output(resp.choices[0].message.content)
+            if result:
+                result["method"] = "openai"
+                logger.info(f"[OPENAI] ✓ Processed: {result['title'][:60]}...")
+            return result
         except Exception as e:
-            logger.warning(f"[AI] OpenAI failed: {e}")
-            return None
-
-    # â”€â”€ Provider registry â”€â”€
-
-    def _get_provider_map(self) -> Dict[str, callable]:
-        return {
-            "gemini": self._rephrase_gemini,
-            "groq": self._rephrase_groq,
-            "ollama": self._rephrase_ollama,
-            "ollama-glm": self._rephrase_ollama_glm,
-            "anthropic": self._rephrase_anthropic,
-            "openai": self._rephrase_openai,
-        }
-
-    def _is_provider_configured(self, name: str) -> bool:
-        checks = {
-            "gemini": bool(settings.GEMINI_API_KEY),
-            "groq": bool(settings.GROQ_API_KEY),
-            "ollama": bool(ollama and settings.OLLAMA_MODEL),
-            "ollama-glm": bool(ollama),
-            "anthropic": bool(settings.ANTHROPIC_API_KEY),
-            "openai": bool(settings.OPENAI_API_KEY),
-        }
-        return checks.get(name, False)
-
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 7. PARALLEL PROVIDER EXECUTION (fast)
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    def rephrase_with_providers(self, title: str, content: str, lang_name: str) -> Optional[dict]:
-        """Try all configured providers in parallel. First valid + sufficiently-rephrased result wins.
-
-        Uses ThreadPoolExecutor for true parallelism across AI providers.
-        """
-        provider_map = self._get_provider_map()
-        chain = settings.AI_PROVIDER_CHAIN
-
-        active_providers = []
-        for name in chain:
-            if self._is_provider_configured(name):
-                fn = provider_map.get(name)
-                if fn:
-                    active_providers.append((name, fn))
-
-        if not active_providers:
-            logger.warning("[AI] No providers configured!")
-            return None
-
-        # Execute all providers in parallel â€” first good result wins
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(active_providers)) as executor:
-            futures = {
-                executor.submit(fn, title, content, lang_name): name
-                for name, fn in active_providers
-            }
-            for future in concurrent.futures.as_completed(futures):
-                name = futures[future]
-                try:
-                    result = future.result()
-                    if not result or not result.get("content"):
-                        continue
-
-                    # Validate rephrasing quality
-                    if not is_sufficiently_rephrased(content, result["content"]):
-                        logger.info(f"[AI] {name} output too similar, checking others")
-                        continue
-
-                    logger.info(f"[AI-WINNER] {name}")
-                    return result
-                except Exception as e:
-                    logger.warning(f"[AI] {name} error: {e}")
-                    continue
-
-        logger.warning("[AI] All providers exhausted")
+            err_str = str(e).lower()
+            if "quota" in err_str or "429" in err_str or "rate" in err_str or "limit" in err_str:
+                logger.warning(f"[OPENAI] QUOTA EXCEEDED: {e}")
+                raise
+            logger.warning(f"[OPENAI] Failed: {e}")
         return None
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 8. FALLBACK
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Provider execution ──
+
+    def rephrase_with_providers(self, title: str, content: str, lang_name: str) -> Optional[dict]:
+        """Sequential provider chain based on settings.AI_PROVIDER_CHAIN.
+        
+        Order: Defined by settings.AI_PROVIDER_CHAIN (default: ["gemini", "openai"])
+        Local Rephrase (Fast/Regex) is the ultimate fallback if all AI providers fail.
+        """
+        chain = settings.AI_PROVIDER_CHAIN
+        if not chain:
+            chain = ["gemini", "openai"]  # Default fallback chain
+
+        # Map chain names to functions
+        provider_map = {
+            "gemini": [
+                ("GEMINI-PRIMARY", lambda: self._rephrase_gemini(title, content, lang_name, use_secondary=False)),
+                ("GEMINI-SECONDARY", lambda: self._rephrase_gemini(title, content, lang_name, use_secondary=True)),
+            ],
+            "openai": [("OPENAI", lambda: self._rephrase_openai(title, content, lang_name))],
+            "ollama": [("OLLAMA", lambda: self._rephrase_ollama(title, content, lang_name))],
+        }
+
+        # Build execution list based on chain
+        to_execute = []
+        for p_name in chain:
+            p_name = p_name.lower()
+            if p_name in provider_map:
+                to_execute.extend(provider_map[p_name])
+
+        for name, fn in to_execute:
+            try:
+                result = fn()
+                if self._is_valid_ai_res(result, content):
+                    # No need to override "method" here as it's set in the provider functions
+                    logger.info(f"[AI-WINNER] {name}")
+                    return result
+                else:
+                    logger.info(f"[AI] {name}: empty or invalid result, trying next")
+            except Exception as e:
+                err_str = str(e).lower()
+                if any(x in err_str for x in ["quota", "rate", "429", "limit", "insufficient"]):
+                    logger.warning(f"[AI] {name}: QUOTA/RATE LIMIT — falling through")
+                else:
+                    logger.warning(f"[AI] {name}: technical error ({e}) — trying next")
+                continue
+
+        logger.warning("[AI] All configured providers exhausted")
+        return None
+
+
+
+    def _is_valid_ai_res(self, res: Optional[dict], original_content: str) -> bool:
+        if res and res.get("content") and len(res["content"]) > 50:
+            return True
+        return False
+
+    # ── Fast Local Rephrase (no API) ──
 
     def fast_local_rephrase(self, title: str, content: str) -> Tuple[str, str]:
-        """Fast local rephrasing — no AI API needed. Runs in <100ms.
-        
-        1. Cleans source attributions and ads
-        2. Splits into proper sentences/paragraphs
-        3. Formats with professional HTML structure
-        4. Extracts key points into bullet list
-        """
-        import re
-        logger.info("[FAST-REPHRASE] Processing locally")
-        
-        clean_title = strip_sources(title).strip()
-        clean_content = strip_sources(content).strip()
-        
-        # Remove HTML tags from raw content
-        clean_content = re.sub(r'<[^>]+>', ' ', clean_content)
-        clean_content = re.sub(r'\s+', ' ', clean_content).strip()
-        
-        if not clean_content:
-            return clean_title, "<p>No content available.</p>"
-        
-        # Split into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', clean_content)
-        sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 15]
-        
-        if not sentences:
-            return clean_title, f"<p>{clean_content}</p>"
-        
-        # Build structured HTML
-        parts = []
-        
-        # Opening paragraph (first 2-3 sentences)
-        intro_count = min(3, len(sentences))
-        intro = " ".join(sentences[:intro_count])
-        parts.append(f"<p>{intro}</p>")
-        
-        remaining = sentences[intro_count:]
-        
-        # Extract key points if enough sentences
-        if len(remaining) >= 3:
-            parts.append("<p><b>Key Highlights:</b></p>")
-            parts.append("<ul>")
-            # Take up to 5 key points
-            key_count = min(5, len(remaining))
-            for s in remaining[:key_count]:
-                # Clean up sentence for bullet point
-                s = s.rstrip('.')
-                parts.append(f"  <li>{s}.</li>")
-            parts.append("</ul>")
-            remaining = remaining[key_count:]
-        
-        # Body paragraphs (group remaining into paragraphs of 2-3 sentences)
-        while remaining:
-            chunk_size = min(3, len(remaining))
-            para = " ".join(remaining[:chunk_size])
-            parts.append(f"<p>{para}</p>")
-            remaining = remaining[chunk_size:]
-        
-        html_content = "\n".join(parts)
-        return clean_title, html_content
+        """Instant local rephrasing — no AI API needed."""
+        logger.info("[FAST-REPHRASE] Regex transformation")
+        c_title = strip_sources(title).strip().capitalize()
+        c_content = strip_sources(content).strip()
+        c_content = re.sub(r'<[^>]+>', ' ', c_content) # Strip HTML
+        c_content = re.sub(r'\s+', ' ', c_content).strip()
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 9. EXPANDED KEYWORD-BASED CATEGORY FALLBACK
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        if not c_content:
+            return c_title, f"<p>{c_content or c_title}</p>"
+
+        sentences = re.split(r'(?<=[.!?])\s+', c_content)
+        sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
+
+        if not sentences:
+            return c_title, f"<p>{c_content}</p>"
+
+        parts = [f"<p>{' '.join(sentences[:2])}</p>"]
+        if len(sentences) > 2:
+            parts.append("<p><b>Key Highlights:</b></p><ul>")
+            for s in sentences[2:7]:
+                parts.append(f"<li>{s}</li>")
+            parts.append("</ul>")
+        if len(sentences) > 7:
+            parts.append(f"<p>{' '.join(sentences[7:12])}</p>")
+        
+        return c_title, "\n".join(parts)
+
+    # ── Keyword categorization ──
 
     def _categorize_by_keywords(self, title: str, content: str) -> str:
         text_low = f"{title} {content}".lower()
-        keyword_map = {
+        kw = {
             "Politics": ["election", "modi", "minister", "parliament", "congress", "government",
-                         "political", "senator", "vote", "policy", "jagan", "chandrababu", "tdp",
-                         "ysrcp", "bjp", "kcr", "legislation", "governor", "chief minister",
-                         "assembly", "lok sabha", "rajya sabha", "speaker", "opposition"],
+                         "political", "vote", "policy", "jagan", "chandrababu", "tdp", "ysrcp",
+                         "bjp", "kcr", "legislation", "governor", "chief minister", "assembly"],
             "Events": ["match", "ipl", "cricket", "tournament", "championship", "sports",
-                       "game", "football", "tennis", "olympic", "convention", "conference",
-                       "festival", "expo", "ceremony", "celebration", "marathon", "kabaddi"],
+                       "game", "football", "tennis", "olympic", "festival", "conference",
+                       "celebration", "marathon", "kabaddi", "world cup"],
             "Entertainment": ["movie", "tollywood", "bollywood", "actor", "actress", "film",
-                              "director", "box office", "ott", "netflix", "cinema", "review",
-                              "trailer", "music", "singer", "album", "dsp", "concert", "dance",
-                              "award", "premiere", "gossip", "celebrity"],
+                              "director", "box office", "ott", "netflix", "cinema", "trailer",
+                              "music", "singer", "concert", "award", "celebrity", "gossip"],
             "Tech": ["ai", "chipset", "mobile", "software", "google", "apple", "startup",
                      "tech", "digital", "smartphone", "app", "artificial intelligence",
-                     "machine learning", "robot", "cyber", "internet", "5g", "chip"],
+                     "machine learning", "robot", "cyber", "internet", "5g"],
             "Business": ["stock", "market", "economy", "revenue", "profit", "company",
                          "investment", "gdp", "inflation", "trade", "bank", "rbi",
-                         "sensex", "nifty", "startup", "ipo", "merger", "acquisition"],
+                         "sensex", "nifty", "ipo", "merger", "acquisition"],
             "Health": ["hospital", "doctor", "disease", "covid", "vaccine", "medical",
                        "health", "treatment", "patient", "surgery", "drug", "pharma",
-                       "mental health", "fitness", "nutrition", "cancer", "diabetes"],
+                       "cancer", "diabetes", "mental health", "fitness"],
             "Science": ["research", "study", "nasa", "space", "scientist", "discovery",
-                        "experiment", "climate", "physics", "biology", "isro", "satellite",
-                        "quantum", "genome", "evolution", "asteroid"],
+                        "climate", "physics", "biology", "isro", "satellite", "quantum"],
             "World": ["international", "global", "united nations", "foreign", "europe",
                       "china", "russia", "ukraine", "war", "nato", "summit", "diplomat",
                       "us president", "white house", "middle east", "pakistan"],
         }
-        for category, keywords in keyword_map.items():
+        for cat, keywords in kw.items():
             if any(k in text_low for k in keywords):
-                return category
+                return category_service.normalize(cat)
         return "Home"
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 10. MASTER PIPELINE â€” accepts **kwargs for backward compat
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────
+    # MASTER PIPELINE
+    # ─────────────────────────────────────────────
 
     def process_article(self, title: str, content: str, **kwargs) -> Dict:
-        """Process a single article through the AI pipeline.
+        """Full article processing pipeline.
 
-        Accepts **kwargs to handle old callers (source_language=) without breaking.
-        Pipeline: Detect Language â†’ AI Rephrase â†’ Validate â†’ Categorize
+        1. Detect language
+        2. Try AI rephrase (Gemini → OpenAI)
+        3. Fall back to fast local rephrase
+        4. Categorize + tag + slug
         """
         t1 = time.time()
 
-        # 1. Detect Language
+        # 1. Detect language
         try:
-            sample = f"{title} {content[:200]}" if content else title
-            lang_code = detect(sample)
+            lang_code = detect(f"{title} {(content or '')[:200]}")
         except Exception:
             lang_code = "en"
 
         lang_map = {"te": "Telugu", "en": "English", "hi": "Hindi", "ta": "Tamil", "kn": "Kannada"}
         lang_name = lang_map.get(lang_code, "English")
 
-        # 2. Try fast local rephrase first (instant, no API call)
-        r_title, r_content = self.fast_local_rephrase(title, content or "")
-        r_cat = self._categorize_by_keywords(title, content or "")
-        confidence = 0.6
-        method = "local"
+        # 2. AI Rephrase (Gemini primary → OpenAI fallback)
+        method = "none"
+        r_title = r_content = r_cat = None
+        tags = []
+        slug = ""
 
-        # 3. Optionally enhance with AI if providers are configured
         try:
             ai_res = self.rephrase_with_providers(title, content or "", lang_name)
             if ai_res and ai_res.get("content"):
-                r_title = ai_res.get("title", r_title)
-                r_content = ai_res.get("content", r_content)
-                ai_cat_raw = ai_res.get("category", "Home").strip()
-                ai_cat_norm = ai_cat_raw.capitalize() if ai_cat_raw else "Home"
-                if ai_cat_norm in CATEGORIES:
-                    r_cat = ai_cat_norm
-                confidence = 0.85
-                method = "ai"
+                r_title = ai_res["title"]
+                r_content = ai_res["content"]
+                # Validate category from AI using central service
+                r_cat = category_service.normalize(ai_res.get("category", "Home"))
+                tags = ai_res.get("tags", [])
+                slug = ai_res.get("slug", "")
+                method = ai_res.get("method", "ai")
         except Exception as e:
-            logger.warning(f"[AI] Enhancement failed, using local rephrase: {e}")
+            logger.warning(f"[AI] All providers failed: {e}")
+
+        # 3. Fallback to fast local rephrase (Force this only if All AI fails)
+        if not r_content:
+            logger.warning(f"[PIPELINE] Fallback to LOCAL processing for: {title[:50]}...")
+            r_title, r_content = self.fast_local_rephrase(title, content or "")
+            r_cat = self._categorize_by_keywords(title, content or "")
+            method = "local"
+
+        # 4. Generate tags and slug if not from AI
+        if not tags:
+            tags = generate_tags(r_title or title, content or "", r_cat or "Home")
+        if not slug:
+            slug = generate_slug(r_title or title)
 
         duration = round(time.time() - t1, 2)
         logger.info(f"[PIPELINE] {lang_code} | cat={r_cat} | {duration}s | method={method}")
@@ -580,13 +519,14 @@ class AIService:
             "original_language": lang_code,
             "translated_title": title,
             "translated_content": content or "",
-            "rephrased_title": r_title,
-            "rephrased_content": r_content,
-            "slug": generate_slug(r_title or title),
-            "category": r_cat,
-            "category_confidence": confidence,
-            "tags": [],
-            "processed_at": time.asctime()
+            "rephrased_title": r_title or title,
+            "rephrased_content": r_content or content or "",
+            "slug": slug,
+            "category": r_cat or "Home",
+            "category_confidence": 0.85 if method != "local" else 0.4,
+            "tags": tags,
+            "method": method,
+            "processed_at": datetime.now().isoformat(),
         }
 
 

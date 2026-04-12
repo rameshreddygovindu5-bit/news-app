@@ -51,6 +51,7 @@ async def save_youtube_article(
         else:
             raise HTTPException(status_code=400, detail="No sources available")
 
+    from app.services.category_service import category_service
     article = NewsArticle(
         source_id=source_id,
         original_title=data.title,
@@ -60,10 +61,10 @@ async def save_youtube_article(
         rephrased_content=data.content,
         translated_title=data.title,
         translated_content=data.content,
-        category=data.category or "General",
+        category=category_service.normalize(data.category or "General"),
         tags=data.tags or [],
         content_hash=content_hash,
-        flag="P",  # Goes to admin approval queue first
+        flag="A",  # Mark as processed immediately since data comes from process endpoint
         image_url=data.image_url,
         original_language="en",
         published_at=datetime.now(timezone.utc),
@@ -72,4 +73,12 @@ async def save_youtube_article(
     db.add(article)
     await db.commit()
     await db.refresh(article)
-    return {"message": "YouTube article saved for admin approval", "id": article.id}
+
+    # Trigger AWS sync immediately for YouTube imports (since flag=A)
+    from app.tasks.celery_app import sync_to_aws
+    try:
+        sync_to_aws.delay()
+    except Exception:
+        pass
+
+    return {"message": "YouTube article saved successfully", "id": article.id}

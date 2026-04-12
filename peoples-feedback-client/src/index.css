@@ -42,7 +42,19 @@ body::before {
 }
 
 /* Premium article content — NYT-style readability */
-.article-content { font-family: var(--font-serif); font-size: 1.2rem; line-height: 1.9; color: #1a1a1a; }
+/* Premium article content — NYT-style readability */
+.article-content { 
+  font-family: var(--font-serif); 
+  font-size: 1.1rem; 
+  line-height: 1.8; 
+  color: #1a1a1a; 
+}
+@media (min-width: 768px) {
+  .article-content {
+    font-size: 1.25rem;
+    line-height: 1.9;
+  }
+}
 .article-content p { margin-bottom: 1.75rem; }
 .article-content b, .article-content strong { font-weight: 700; color: #000; }
 .article-content ul { margin: 1.5rem 0; padding-left: 1.5rem; }

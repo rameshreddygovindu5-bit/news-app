@@ -123,7 +123,7 @@ export default function NewsDetail() {
             </Link>
           )}
 
-          <h1 className="text-3xl md:text-5xl font-[900] leading-[0.95] tracking-tight text-zinc-950 mb-6">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-[900] leading-[1.1] tracking-tight text-zinc-950 mb-6">
             {title}
           </h1>
 

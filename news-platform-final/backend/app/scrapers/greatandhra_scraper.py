@@ -37,28 +37,34 @@ TEL_ARTICLE_RE = re.compile(r"https?://telugu\.greatandhra\.com/.+\.html$")
 
 # Correct section URLs verified from actual site navigation
 ENG_LISTING_SECTIONS = [
-    "latest",                    # PRIMARY — has everything chronologically
-    "andhra-news",
-    "telangana-news",
-    "india-news",
-    "movies",                    # NOT /movies/news
-    "moviegossip",               # NOT /movies/gossip
-    "boxoffice",
-    "reviews",                   # NOT /movies/reviews
-    "opinion",
-    "articles/special-articles",
-    "articles/news",
+    "latest",                    # Primary
+    "politics",                  # Main Politics
+    "andhra-news",               # From sub-menu
+    "telangana-news",            # From sub-menu
+    "india-news",                # From sub-menu
+    "movies",                    # Main Movies (news)
+    "moviegossip",               # From sub-menu
+    "boxoffice",                 # From sub-menu
+    "reviews",                   # Main Reviews
+    "opinion",                   # Main Opinion
 ]
 
 TEL_LISTING_SECTIONS = [
-    "latest-news",
-    "politics/andhra-news",
-    "politics/telangana-news",
-    "movies/movie-news",
-    "movies/movie-gossip",
-    "movies/reviews",
-    "articles/specialarticles",
-    "health",
+    "latest-news",               # Primary
+    "politics",                  # Main Politics (వార్తలు)
+    "politics/andhra-news",      # From sub-menu (ఆంధ్ర)
+    "politics/telangana-news",   # From sub-menu (తెలంగాణ)
+    "politics/national",         # From sub-menu (జాతీయం)
+    "politics/opinion",          # From sub-menu (అభిప్రాయం)
+    "politics/analysis",         # From sub-menu (విశ్లేషణ)
+    "politics/gossip",           # From sub-menu (గాసిప్స్)
+    "movies",                    # Main Movies (సినిమా)
+    "movies/movie-news",         # From sub-menu (వార్తలు)
+    "movies/movie-gossip",       # From sub-menu (గాసిప్స్)
+    "movies/reviews",            # From sub-menu (రివ్యూలు)
+    "movies/press-releases",     # From sub-menu (ప్రెస్ రిలీజ్లు)
+    "mbs",                       # Extra (ఎమ్బీయస్)
+    "health",                    # Added from mobile menu
 ]
 
 EXCLUDE_SUBSTRINGS = [
@@ -243,7 +249,7 @@ class GreatAndhraScraper(BaseScraper):
                 if self.is_telugu:
                     url = f"{self.current_base}/{primary}/page/{page_num}"
                 else:
-                    url = f"{self.current_base}/{primary}/{page_num}"
+                    url = f"{self.current_base}/{primary}?page={page_num}"
 
             html = await self._fetch_with_retry(url)
             if not html:
@@ -286,7 +292,7 @@ class GreatAndhraScraper(BaseScraper):
                     if self.is_telugu:
                         url = f"{self.current_base}/{section}/page/{page_num}"
                     else:
-                        url = f"{self.current_base}/{section}/{page_num}"
+                        url = f"{self.current_base}/{section}?page={page_num}"
 
                 html = await self._fetch_with_retry(url)
                 if not html:
@@ -357,6 +363,7 @@ class GreatAndhraScraper(BaseScraper):
             "RELATED ARTICLES", "Related Articles",
             "Top News", "Top Trending", "Recommended For You",
             "Gossip:", "About Us", "Disclaimer", "\u00a9",
+            "Click Here For Photo Gallery",
         ]
 
         for el in soup.find_all(["h1", "p"]):
@@ -369,6 +376,10 @@ class GreatAndhraScraper(BaseScraper):
             text = el.get_text(strip=True)
             if any(marker in text for marker in end_markers):
                 break
+            # Noise filter for common fluff
+            if "Click Here For Photo Gallery" in text:
+                continue
+
             if not text or len(text) < 15:
                 continue
             if text.startswith("Tags:"):

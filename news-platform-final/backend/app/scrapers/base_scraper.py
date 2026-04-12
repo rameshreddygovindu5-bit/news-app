@@ -144,6 +144,10 @@ class RSSScaper(BaseScraper):
                         if enc.get("type", "").startswith("image"):
                             image_url = enc.get("href") or enc.get("url")
                             break
+                
+                # Ensure image_url is absolute
+                if image_url and not image_url.startswith("http"):
+                    image_url = f"{self.base_url.rstrip('/')}/{image_url.lstrip('/')}"
 
                 # Fetch FULL article content via newspaper3k
                 full_content = summary

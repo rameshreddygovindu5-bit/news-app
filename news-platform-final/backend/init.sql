@@ -150,15 +150,23 @@ CREATE INDEX idx_scheduler_logs_status ON scheduler_logs(status);
 -- SEED DATA - Default Categories
 -- =============================================
 INSERT INTO categories (name, slug, description) VALUES
+    ('Home', 'home', 'Top stories and general news'),
+    ('World', 'world', 'International and global affairs'),
     ('Politics', 'politics', 'Political news and government affairs'),
-    ('Sports', 'sports', 'Sports news and events'),
-    ('Movies', 'movies', 'Film and entertainment news'),
     ('Business', 'business', 'Business and financial news'),
-    ('International', 'international', 'World news and global affairs'),
-    ('Technology', 'technology', 'Tech industry and innovation news'),
-    ('Health', 'health', 'Health and medical news'),
+    ('Tech', 'tech', 'Technology and innovation news'),
     ('Science', 'science', 'Science and research news'),
-    ('General', 'general', 'General news');
+    ('Health', 'health', 'Health and medical news'),
+    ('Entertainment', 'entertainment', 'Movies, film and entertainment news'),
+    ('Events', 'events', 'Sports, events and cultural news')
+ON CONFLICT (name) DO NOTHING;
+
+-- Migrate old category names to new ones
+UPDATE news_articles SET category = 'Tech' WHERE category IN ('Technology', 'technology');
+UPDATE news_articles SET category = 'Entertainment' WHERE category IN ('Movies', 'movies', 'Entertainment');
+UPDATE news_articles SET category = 'World' WHERE category IN ('International', 'international');
+UPDATE news_articles SET category = 'Events' WHERE category IN ('Sports', 'sports');
+UPDATE news_articles SET category = 'Home' WHERE category IN ('General', 'general');
 
 -- =============================================
 -- SEED DATA - Default News Sources

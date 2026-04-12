@@ -72,16 +72,16 @@ const HeroCard = ({ article }: { article: NewsArticle }) => (
             Latest News
           </span>
         </div>
-        <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl transform transition-all duration-300 group-hover:scale-105" style={{ fontFamily: 'var(--font-headline)' }}>
+        <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl transform transition-all duration-300 group-hover:scale-105" style={{ fontFamily: 'var(--font-headline)' }}>
           {getTitle(article)}
         </h1>
-        <p className="text-white/80 text-lg md:text-xl line-clamp-3 max-w-3xl mb-4 leading-relaxed" style={{ fontFamily: 'var(--font-serif)' }}>
+        <p className="text-white/80 text-sm sm:text-lg md:text-xl line-clamp-3 max-w-3xl mb-4 leading-relaxed" style={{ fontFamily: 'var(--font-serif)' }}>
           {getSummary(article, 200)}
         </p>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 text-white/60 text-[12px] font-medium">
+          <div className="flex items-center gap-4 text-white/60 text-[10px] sm:text-[12px] font-medium">
             <span className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               {timeAgo(article.published_at)}
             </span>
           </div>
@@ -98,56 +98,71 @@ const HeroCard = ({ article }: { article: NewsArticle }) => (
 
 /* ── Article Card — Enhanced modern design ── */
 const ArticleCard = ({ article, size = 'md' }: { article: NewsArticle; size?: 'lg' | 'md' | 'sm' }) => (
-  <motion.div initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+  <motion.div 
+    initial={{ opacity: 0, y: 15 }} 
+    whileInView={{ opacity: 1, y: 0 }} 
+    whileHover={{ y: -8 }}
+    viewport={{ once: true }}
+    className="h-full"
+  >
     <Link href={`/news/${article.slug || article.id}`}>
-      <div className="group cursor-pointer bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:border-[var(--pf-orange)]/50">
+      <div className="group cursor-pointer h-full bg-white/70 backdrop-blur-sm rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden transform transition-all duration-500 hover:shadow-[0_20px_50px_rgb(0,0,0,0.12)] hover:border-[var(--pf-orange)]/30">
         {size !== 'sm' && (
           <div className="aspect-video relative overflow-hidden">
             {article.image_url && article.image_url.trim() !== '' ? (
               <>
-                <img src={getImage(article)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" onError={handleImgError} data-category={article.category} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <img src={getImage(article)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" onError={handleImgError} data-category={article.category} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="absolute inset-0 bg-[var(--pf-orange)]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               </>
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-[var(--pf-orange)]/20 via-[var(--pf-blue)]/20 to-[var(--pf-purple)]/20 flex items-center justify-center p-6">
-                <div className="text-center">
-                  <h4 className="text-lg md:text-xl font-black text-white mb-2 leading-tight" style={{ fontFamily: 'var(--font-headline)' }}>
-                    {getTitle(article)}
-                  </h4>
-                  <p className="text-white/80 text-sm md:text-base line-clamp-3 leading-relaxed max-w-md mx-auto">
-                    {getSummary(article, 100)}
-                  </p>
-                </div>
+              <div className="w-full h-full bg-gradient-to-br from-[var(--pf-orange)]/30 via-[var(--pf-blue)]/30 to-[var(--pf-purple)]/30 flex items-center justify-center p-6">
+                <Newspaper className="w-12 h-12 text-white/50" />
               </div>
             )}
             {article.category && (
-              <span className="absolute top-4 left-4 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full shadow-lg">
+              <span className="absolute top-4 left-4 bg-white/90 backdrop-blur-md text-[var(--pf-navy)] px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] rounded-full shadow-lg border border-gray-100">
                 {article.category}
               </span>
             )}
+            {/* Pulsing indicator for top news */}
+            {article.rank_score && article.rank_score > 80 && (
+              <div className="absolute top-4 right-4 w-2 h-2 bg-[var(--pf-red)] rounded-full shadow-[0_0_8px_var(--pf-red)]">
+                <div className="absolute inset-0 rounded-full bg-[var(--pf-red)] animate-ping"></div>
+              </div>
+            )}
           </div>
         )}
-        <div className="p-5">
+        <div className="p-6 flex flex-col h-fit">
           {size === 'sm' && article.category && (
-            <span className="inline-block bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded-full mb-3">
+            <span className="inline-block bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full mb-4 w-fit">
               {article.category}
             </span>
           )}
-          <h3 className={`font-black leading-tight mb-3 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-[var(--pf-orange)] group-hover:to-[var(--pf-pink)] group-hover:bg-clip-text transition-all duration-300 ${size === 'lg' ? 'text-2xl' : size === 'md' ? 'text-xl' : 'text-lg'}`} style={{ fontFamily: 'var(--font-headline)' }}>
+          <h3 className={`font-black tracking-tight text-gray-950 mb-4 group-hover:text-[var(--pf-orange)] transition-colors duration-300 leading-[1.15] ${size === 'lg' ? 'text-2xl' : size === 'md' ? 'text-xl' : 'text-lg'}`} style={{ fontFamily: 'var(--font-headline)' }}>
             {getTitle(article)}
           </h3>
-          <p className={`text-gray-600 leading-relaxed mb-4 line-clamp-3 ${size === 'lg' ? 'text-base' : 'text-sm'}`} style={{ fontFamily: 'var(--font-serif)' }}>
-            {getSummary(article, 150)}
+          <p className={`text-gray-600 leading-relaxed mb-6 line-clamp-3 ${size === 'lg' ? 'text-base' : 'text-sm'}`} style={{ fontFamily: 'var(--font-serif)' }}>
+            {getSummary(article, 160)}
           </p>
-          <div className="flex items-center justify-between text-gray-500">
-            <div className="flex items-center gap-3 text-[11px] font-medium">
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
+          
+          <div className="mt-auto pt-6 border-t border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                 <img src="/pf-logo.png" className="w-4 h-4 object-contain opacity-50" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
                 {timeAgo(article.published_at)}
               </span>
             </div>
-            <div className="flex items-center gap-1 text-[var(--pf-orange)] opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <ArrowRight className="w-4 h-4" />
+            
+            <div className="flex items-center gap-2 group/btn">
+              <span className="text-[10px] font-black uppercase tracking-widest text-transparent bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] bg-clip-text opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
+                Explore
+              </span>
+              <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-[var(--pf-orange)] group-hover:text-white transition-all duration-300">
+                <ArrowRight className="w-4 h-4 transform transition-transform duration-300" />
+              </div>
             </div>
           </div>
         </div>

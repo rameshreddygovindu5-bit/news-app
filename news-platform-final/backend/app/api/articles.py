@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import logging
 from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,9 @@ from app.schemas.schemas import (
     ManualNewsCreate, FlagEnum, ArticleApproval
 )
 from app.services.auth_service import get_current_user, require_admin
+from app.services.category_service import category_service
+
+logger = logging.getLogger(__name__)
 
 def _make_slug(title: str) -> str:
     import re
@@ -22,6 +26,37 @@ def _make_slug(title: str) -> str:
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"[\s_-]+", "_", s).strip("_")
     return s[:200] if s else None
+
+
+async def _run_ai_and_rank(article_id: int, db: AsyncSession):
+    """Run AI rephrase + auto-rank in background after manual/submit/youtube save."""
+    import asyncio
+    try:
+        from app.services.ai_service import ai_service
+        art = (await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))).scalar_one_or_none()
+        if not art:
+            return
+        # AI process
+        result = await asyncio.to_thread(
+            ai_service.process_article,
+            art.original_title, art.original_content or ""
+        )
+        art.rephrased_title = result["rephrased_title"]
+        art.rephrased_content = result["rephrased_content"]
+        art.translated_title = result.get("translated_title", art.original_title)
+        art.translated_content = result.get("translated_content", art.original_content)
+        art.category = result["category"]
+        art.slug = result.get("slug") or _make_slug(result["rephrased_title"])
+        art.tags = result.get("tags", [])
+        art.ai_status = "completed"
+        art.processed_at = datetime.now(timezone.utc)
+        # Auto-rank: set flag=Y so it appears in top news and client UI
+        art.flag = "Y"
+        art.rank_score = 500  # High initial score for manual/submitted articles
+        await db.commit()
+        logger.info(f"[AUTO-AI] Article {article_id} processed + ranked (Y)")
+    except Exception as e:
+        logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
 
 router = APIRouter(prefix="/api/articles", tags=["News Articles"])
 
@@ -110,13 +145,34 @@ async def get_articles_by_category(
     category: str, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    base = NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False
-    total = (await db.execute(select(func.count(NewsArticle.id)).where(*base))).scalar() or 0
+    base = [NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
+    total_result = await db.execute(select(func.count(NewsArticle.id)).where(and_(*base)))
+    total = total_result.scalar() or 0
+    
+    if total == 0:
+        # Fallback: take latest 2 months news for this category
+        from datetime import timedelta
+        two_months_ago = datetime.now(timezone.utc) - timedelta(days=60)
+        base = [
+            NewsArticle.category == category, 
+            NewsArticle.flag.in_(["N", "A", "Y"]), 
+            NewsArticle.is_duplicate == False,
+            or_(NewsArticle.published_at >= two_months_ago, NewsArticle.created_at >= two_months_ago)
+        ]
+        total_result = await db.execute(select(func.count(NewsArticle.id)).where(and_(*base)))
+        total = total_result.scalar() or 0
+        
     query = select(NewsArticle, NewsSource.name.label("source_name")).join(
         NewsSource, NewsArticle.source_id == NewsSource.id
-    ).where(*base).order_by(desc(NewsArticle.published_at)).offset((page-1)*page_size).limit(page_size)
+    ).where(and_(*base)).order_by(desc(NewsArticle.published_at)).offset((page-1)*page_size).limit(page_size)
     rows = (await db.execute(query)).all()
-    return {"articles": [article_to_response(r[0], r[1]) for r in rows], "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size, "category": category}
+    return {
+        "articles": [article_to_response(r[0], r[1]) for r in rows], 
+        "total": total, "page": page, "page_size": page_size, 
+        "total_pages": (total + page_size - 1) // page_size, 
+        "category": category,
+        "is_fallback": total > 0 and not any(r[0].flag == "Y" for r in rows)
+    }
 
 
 # ===== PENDING APPROVAL QUEUE (admin) =====
@@ -162,6 +218,14 @@ async def approve_article(
         raise HTTPException(status_code=400, detail="Invalid action. Use: approve, approve_direct, reject")
 
     await db.commit()
+
+    # Automation: Trigger AI process or Sync if approved
+    from app.tasks.celery_app import sync_to_aws
+    if data.action == "approve_direct":
+        try:
+            sync_to_aws.delay()
+        except: pass
+
     return {"message": f"Article {data.action}d", "id": article_id, "new_flag": article.flag}
 
 
@@ -215,17 +279,30 @@ async def submit_article(
         source_id=source_id, original_title=data.title, original_content=data.content,
         rephrased_title=data.title, rephrased_content=data.content,
         translated_title=data.title, translated_content=data.content,
-        category=data.category or "General", slug=_make_slug(data.title), tags=data.tags or [],
+        category=category_service.normalize(data.category or "General"), 
+        slug=_make_slug(data.title), tags=data.tags or [],
         content_hash=content_hash, flag=target_flag,
         image_url=data.image_url, original_language="en",
         published_at=datetime.now(timezone.utc), processed_at=datetime.now(timezone.utc) if target_flag != "P" else None,
         submitted_by=user.username,
+        ai_status="completed" if is_admin else "pending",
+        scrape_metadata={"ai_method": "manual"} if is_admin else None
     )
     db.add(article)
     await db.commit()
     await db.refresh(article)
 
-    status_msg = "submitted for approval" if target_flag == "P" else "created and published"
+    # Run AI processing + auto-rank in background for admin submissions
+    if target_flag != "P":
+        import asyncio
+        asyncio.create_task(_run_ai_and_rank(article.id, db))
+        # Trigger AWS sync after a small delay
+        from app.tasks.celery_app import sync_to_aws
+        try:
+            sync_to_aws.apply_async(countdown=30) # Give AI time to finish
+        except: pass
+
+    status_msg = "submitted for approval" if target_flag == "P" else "created and automated processing started"
     return {"message": f"Article {status_msg}", "id": article.id, "flag": target_flag}
 
 
@@ -268,6 +345,14 @@ async def update_article(
         article.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(article)
+
+    # Automation: If article is public (A or Y), trigger AWS sync
+    if article.flag in ["A", "Y"]:
+        from app.tasks.celery_app import sync_to_aws
+        try:
+            sync_to_aws.delay()
+        except: pass
+
     return {"message": "Article updated", "id": article_id}
 
 
@@ -305,26 +390,28 @@ async def create_manual_article(
         source_id=source_id, original_title=data.title, original_content=data.content,
         rephrased_title=data.title, rephrased_content=data.content,
         translated_title=data.title, translated_content=data.content,
-        category=data.category or "General", slug=_make_slug(data.title), tags=data.tags or [],
+        category=category_service.normalize(data.category or "General"), 
+        slug=_make_slug(data.title), tags=data.tags or [],
         content_hash=content_hash, flag=target_flag,
         image_url=data.image_url, original_language="en",
         published_at=datetime.now(timezone.utc), processed_at=datetime.now(timezone.utc),
         submitted_by="admin",
+        ai_status="completed",
+        scrape_metadata={"ai_method": "manual"}
     )
     db.add(article)
     await db.commit()
     await db.refresh(article)
-    return {"message": "Article created", "id": article.id}
+    # Run AI processing + auto-rank in background
+    import asyncio
+    asyncio.create_task(_run_ai_and_rank(article.id, db))
+    
+    # Trigger AWS sync after AI completes
+    from app.tasks.celery_app import sync_to_aws
+    try:
+        sync_to_aws.apply_async(countdown=15)
+    except: pass
+
+    return {"message": "Article created, AI processing started", "id": article.id}
 
 
-@router.post("/{article_id}/reprocess")
-async def reprocess_article(article_id: int, db: AsyncSession = Depends(get_db), admin: AdminUser = Depends(require_admin)):
-    article = (await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))).scalar_one_or_none()
-    if not article: raise HTTPException(status_code=404, detail="Article not found")
-    article.flag = "N"
-    article.processed_at = None
-    article.ai_error_count = 0
-    await db.commit()
-    from app.tasks.celery_app import process_ai_single
-    process_ai_single.delay(article_id)
-    return {"message": "Article queued for reprocessing", "id": article_id}

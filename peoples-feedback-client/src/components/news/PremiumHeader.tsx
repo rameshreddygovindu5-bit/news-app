@@ -89,22 +89,49 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
       <div className="tricolor-stripe" />
 
       {/* ── Top utility bar — vibrant gradient ── */}
-      <div className="bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] text-white h-10 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg">
-        <div className="flex items-center gap-6">
-          <span className="text-white/90 font-semibold">{currentDate}</span>
-          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1">
-            {langs.map(l => (
-              <button key={l.code} onClick={() => switchLang(l.code)}
-                className={`px-3 py-1 rounded-full text-[10px] font-semibold transition-all duration-300 ${document.cookie.includes(`googtrans=/en/${l.code}`) || (l.code === 'en' && !document.cookie.includes('googtrans=')) ? 'bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white shadow-lg transform scale-105' : 'text-white/70 hover:text-white hover:bg-white/10'}`}>
-                {l.name}
-              </button>
-            ))}
+      <div className="bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] text-white h-12 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg relative overflow-hidden">
+        {/* Animated background element */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+        
+        <div className="flex items-center gap-6 relative z-10">
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-1.5 shadow-inner">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--pf-green)] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--pf-green)]"></span>
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--pf-green)]">Live</span>
+            <div className="w-px h-3 bg-white/20 mx-1"></div>
+            <span className="text-white/90 font-bold">{currentDate}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-sm border border-white/10 rounded-full p-1">
+            {langs.map(l => {
+              const isActive = document.cookie.includes(`googtrans=/en/${l.code}`) || (l.code === 'en' && !document.cookie.includes('googtrans='));
+              return (
+                <button key={l.code} onClick={() => switchLang(l.code)}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all duration-300 ${isActive ? 'bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white shadow-lg transform scale-105' : 'text-white/70 hover:text-white hover:bg-white/10'}`}>
+                  {l.name}
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="flex items-center gap-4">
+
+        <div className="flex items-center gap-8 relative z-10">
+          <div className="hidden lg:flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors cursor-pointer">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span className="font-bold uppercase tracking-tighter">Election 2024</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors cursor-pointer">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span className="font-bold uppercase tracking-tighter">Tech Summit</span>
+            </span>
+          </div>
+
           <div id="google_translate_element" className="hidden" />
-          <span className="text-white/90 font-medium italic tracking-wide flex items-center gap-2">
-            <span className="w-2 h-2 bg-[var(--pf-green)] rounded-full animate-pulse"></span>
+          <span className="text-white/90 font-bold italic tracking-wider flex items-center gap-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
+            <span className="w-1.5 h-1.5 bg-[var(--pf-saffron)] rounded-full animate-pulse shadow-[0_0_8px_var(--pf-saffron)]"></span>
             Empowering Every Voice
           </span>
         </div>
@@ -116,22 +143,22 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           <div className="md:hidden">
             <Button variant="ghost" size="icon" onClick={() => setMenuOpen(true)} className="text-gray-700 hover:text-[var(--pf-orange)] transition-colors"><Menu className="h-6 w-6" /></Button>
           </div>
-          <div className="flex-1 flex md:justify-center justify-center">
+          <div className="flex-1 flex md:justify-center justify-center overflow-hidden">
             <Link href="/" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-              <div className="flex flex-col items-center cursor-pointer group">
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <img src="/pf-logo.png" alt="PF" className="h-12 md:h-16 w-auto object-contain filter drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
+              <div className="flex flex-col items-center cursor-pointer group max-w-full">
+                <div className="flex items-center gap-3 md:gap-4 max-w-full">
+                  <div className="relative shrink-0">
+                    <img src="/pf-logo.png" alt="PF" className="h-10 md:h-16 w-auto object-contain filter drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
                     <div className="absolute -inset-1 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] rounded-full opacity-0 group-hover:opacity-20 blur-lg transition-opacity duration-300"></div>
                   </div>
-                  <div className="flex flex-col items-center md:items-start">
-                    <h1 className="text-3xl md:text-5xl font-black tracking-tight bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] bg-clip-text text-transparent leading-none group-hover:scale-105 transition-transform duration-300" style={{ fontFamily: 'var(--font-headline)' }}>
+                  <div className="flex flex-col items-center md:items-start min-w-0">
+                    <h1 className="text-xl sm:text-2xl md:text-5xl font-black tracking-tight bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] bg-clip-text text-transparent leading-none group-hover:scale-105 transition-transform duration-300 truncate md:whitespace-normal" style={{ fontFamily: 'var(--font-headline)' }}>
                       Peoples Feedback
                     </h1>
-                    <div className="flex items-center gap-3 mt-2">
-                      <div className="h-0.5 w-8 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)]"></div>
-                      <span className="text-[10px] font-bold tracking-[0.2em] text-transparent bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)] bg-clip-text uppercase">Empowering Every Voice · Drive Progress</span>
-                      <div className="h-0.5 w-8 bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)]"></div>
+                    <div className="flex items-center gap-2 md:gap-3 mt-1.5 md:mt-2">
+                      <div className="h-0.5 w-4 md:w-8 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)]"></div>
+                      <span className="text-[8px] md:text-[10px] font-bold tracking-[0.1em] md:tracking-[0.2em] text-transparent bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)] bg-clip-text uppercase whitespace-nowrap">Empowering Every Voice</span>
+                      <div className="h-0.5 w-4 md:w-8 bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)]"></div>
                     </div>
                   </div>
                 </div>

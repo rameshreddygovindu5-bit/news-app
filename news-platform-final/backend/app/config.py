@@ -13,17 +13,30 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = "your-secret-key-change-in-production-abc123xyz"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    
+    # Defined Categories (Sync with UI)
+    CATEGORIES: List[str] = [
+        "Home", "World", "Politics", "Business", "Tech", "Science", "Health", "Entertainment", "Events"
+    ]
 
     # Database — passwords preserved exactly
     DATABASE_URL: str = "postgresql+asyncpg://newsadmin:newspass123@localhost:5432/newsagg"
     DATABASE_URL_SYNC: str = "postgresql://newsadmin:newspass123@localhost:5432/newsagg"
-    AWS_DATABASE_URL: str = "postgresql://appuser:PF2026Secure!@#@32.193.27.142:5432/news_db_fe"
+    AWS_DATABASE_URL: str = ""
+    
+    # Individual AWS DB fields for psycopg2
+    AWS_DB_HOST: str = "32.193.27.142"
+    AWS_DB_PORT: int = 5432
+    AWS_DB_NAME: str = "news_db_fe"
+    AWS_DB_USER: str = ""
+    AWS_DB_PASSWORD: str = ""
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # AI Services — keys preserved exactly
+    # AI Services
     GEMINI_API_KEY: str = ""
+    GEMINI_API_KEY_SECONDARY: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
@@ -32,7 +45,7 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "ollama"
 
     # AI Provider priority chain — tried in order, first success wins
-    AI_PROVIDER_CHAIN: List[str] = ["gemini", "groq", "ollama", "ollama-glm", "anthropic", "openai"]
+    AI_PROVIDER_CHAIN: List[str] = ["gemini", "openai"]
     AI_BATCH_SIZE: int = 100
     AI_CONCURRENCY: int = 15
     AI_MAX_RETRIES: int = 2

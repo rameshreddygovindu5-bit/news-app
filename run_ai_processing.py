@@ -49,6 +49,17 @@ def process_articles_directly():
                     # Update the article
                     article.flag = 'A'  # Approved
                     article.processed_at = 'now()'
+                    
+                    # Apply the generated properties to the DB row
+                    if 'rephrased_title' in processed:
+                        article.rephrased_title = processed['rephrased_title']
+                    if 'rephrased_content' in processed:
+                        article.rephrased_content = processed['rephrased_content']
+                    if 'slug' in processed:
+                        article.slug = processed['slug']
+                    if 'category' in processed:
+                        article.category = processed['category']
+                        
                     db.commit()
                     logger.info(f"Successfully processed article {article.id}")
                 else:

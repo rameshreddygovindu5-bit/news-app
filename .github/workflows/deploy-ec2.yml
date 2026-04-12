@@ -1,13 +1,19 @@
-# ═══════════════════════════════════════════════════════════════
-# Auto-deploy Peoples Feedback Client to EC2 on every push
-# Instance: 32.193.27.142 (Amazon Linux 2023)
-# ═══════════════════════════════════════════════════════════════
+# Auto-deploy Peoples Feedback Client to EC2
+# Instance: i-0e448dd106cf9aeed (32.193.27.142)
+#
+# GitHub Secrets required:
+#   EC2_HOST     — EC2 public IP
+#   EC2_USER     — SSH user (ubuntu or ec2-user)
+#   EC2_SSH_KEY  — Full private SSH key (PEM contents)
+#   VITE_API_URL — Backend API URL
 
 name: Deploy to EC2
 
 on:
   push:
     branches: [main, master]
+    paths:
+      - 'peoples-feedback-client/**'
   workflow_dispatch:
 
 jobs:
@@ -18,14 +24,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: peoples-feedback-client/package-lock.json
 
       - name: Install & Build
         working-directory: peoples-feedback-client
         run: |
-          npm ci
+          npm ci || npm install
           npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
@@ -37,44 +43,40 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           # Validate secrets
-          if [ -z "$EC2_HOST" ]; then echo "❌ Error: EC2_HOST secret is missing"; exit 1; fi
-          if [ -z "$EC2_USER" ]; then echo "❌ Error: EC2_USER secret is missing"; exit 1; fi
-          if [ -z "$SSH_KEY" ]; then echo "❌ Error: EC2_SSH_KEY secret is missing"; exit 1; fi
+          if [ -z "$EC2_HOST" ]; then echo "❌ EC2_HOST secret missing"; exit 1; fi
+          if [ -z "$EC2_USER" ]; then echo "❌ EC2_USER secret missing"; exit 1; fi
+          if [ -z "$SSH_KEY" ]; then echo "❌ EC2_SSH_KEY secret missing"; exit 1; fi
 
           # Write SSH key
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/ec2.pem
-          # Ensure there is a newline at the end of the key (common PEM issue)
-          sed -i '$a\' ~/.ssh/ec2.pem
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/ec2.pem
           chmod 600 ~/.ssh/ec2.pem
-          ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
-          
-          # Create deployment package
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Package build
           tar czf /tmp/dist.tar.gz -C peoples-feedback-client/dist .
-          
-          # Upload build to EC2
-          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no /tmp/dist.tar.gz $EC2_USER@$EC2_HOST:/tmp/dist.tar.gz
+
+          # Upload
+          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
+            /tmp/dist.tar.gz "$EC2_USER@$EC2_HOST:/tmp/dist.tar.gz"
 
           # Deploy on EC2
-          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'REMOTE'
+          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'REMOTE'
             set -e
             DEPLOY_DIR="/var/www/peoples-feedback"
-            
-            # Extract build
+
             sudo mkdir -p $DEPLOY_DIR
             sudo rm -rf $DEPLOY_DIR/*
             sudo tar xzf /tmp/dist.tar.gz -C $DEPLOY_DIR
-            
-            # Set permissions (nginx on Amazon Linux, www-data on Ubuntu)
+
+            # Set ownership (works on both Ubuntu and Amazon Linux)
             if id "nginx" &>/dev/null; then
               sudo chown -R nginx:nginx $DEPLOY_DIR
-            else
+            elif id "www-data" &>/dev/null; then
               sudo chown -R www-data:www-data $DEPLOY_DIR
             fi
-            
+
             rm -f /tmp/dist.tar.gz
-            
-            # Reload nginx
             sudo nginx -t && sudo systemctl reload nginx
-            echo "✅ Deploy complete"
+            echo "✅ Deploy complete: $(date)"
           REMOTE

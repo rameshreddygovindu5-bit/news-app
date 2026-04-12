@@ -1,19 +1,20 @@
 """
-In-Process Job Scheduler using APScheduler.
+In-Process Pipeline Scheduler.
 
-Runs inside the FastAPI process — no Redis or Celery needed.
-Jobs run in a background thread pool, won't block the API.
+Runs a full news pipeline every 30 minutes:
+  Minute 0:  Scrape all sources
+  Minute +5: AI rephrase/categorize
+  Minute +10: Update rankings
+  Minute +15: AWS sync + categories
+  Minute +20: Social posting
 
-Usage (in main.py):
-    from app.tasks.scheduler import start_scheduler, stop_scheduler
-    @asynccontextmanager
-    async def lifespan(app):
-        start_scheduler()
-        yield
-        stop_scheduler()
+All steps run sequentially inside a single pipeline job.
+No Redis/Celery needed — runs in a background thread inside FastAPI.
 """
 
+import time
 import logging
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from app.config import get_settings
@@ -22,109 +23,192 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _scheduler: BackgroundScheduler = None
+_pipeline_lock = threading.Lock()
 
 
-def _run_scrape():
-    from app.tasks.celery_app import scrape_all_sources
+def _run_full_pipeline():
+    """The master pipeline — runs all steps sequentially."""
+    if not _pipeline_lock.acquire(blocking=False):
+        logger.warning("[PIPELINE] Already running, skipping this cycle")
+        return
+
     try:
-        scrape_all_sources()
-    except Exception as e:
-        logger.error(f"[SCHED] Scrape failed: {e}")
+        logger.info("=" * 60)
+        logger.info("[PIPELINE] Starting automated news pipeline")
+        logger.info("=" * 60)
+        t0 = time.time()
 
+        # Step 1: Scrape all enabled sources
+        logger.info("[PIPELINE] Step 1/6: Scraping all sources...")
+        try:
+            from app.tasks.celery_app import scrape_all_sources
+            result = scrape_all_sources()
+            logger.info(f"[PIPELINE] Scrape done: {result}")
+        except Exception as e:
+            logger.error(f"[PIPELINE] Scrape failed: {e}")
 
-def _run_ai():
-    from app.tasks.celery_app import process_ai_batch
-    try:
-        process_ai_batch()
-    except Exception as e:
-        logger.error(f"[SCHED] AI failed: {e}")
+        # Step 2: AI rephrase + categorize (flag N → A)
+        logger.info("[PIPELINE] Step 2/6: AI processing...")
+        try:
+            from app.tasks.celery_app import process_ai_batch
+            result = process_ai_batch()
+            logger.info(f"[PIPELINE] AI done: {result}")
+        except Exception as e:
+            logger.error(f"[PIPELINE] AI failed: {e}")
 
+        # Step 3: Update rankings (flag A → Y for top articles)
+        logger.info("[PIPELINE] Step 3/6: Updating rankings...")
+        try:
+            from app.tasks.celery_app import update_top_100_ranking
+            result = update_top_100_ranking()
+            logger.info(f"[PIPELINE] Ranking done: {result}")
+        except Exception as e:
+            logger.error(f"[PIPELINE] Ranking failed: {e}")
 
-def _run_ranking():
-    from app.tasks.celery_app import update_top_100_ranking
-    try:
-        update_top_100_ranking()
-    except Exception as e:
-        logger.error(f"[SCHED] Ranking failed: {e}")
+        # Step 4: Update category article counts
+        logger.info("[PIPELINE] Step 4/6: Updating categories...")
+        try:
+            from app.tasks.celery_app import update_category_counts
+            result = update_category_counts()
+            logger.info(f"[PIPELINE] Categories done: {result}")
+        except Exception as e:
+            logger.error(f"[PIPELINE] Categories failed: {e}")
 
+        # Step 5: Sync to AWS database
+        if settings.SCHEDULE_AWS_SYNC_ENABLED:
+            logger.info("[PIPELINE] Step 5/6: Syncing to AWS...")
+            try:
+                from app.tasks.celery_app import sync_to_aws
+                result = sync_to_aws()
+                logger.info(f"[PIPELINE] AWS sync done: {result}")
+            except Exception as e:
+                logger.error(f"[PIPELINE] AWS sync failed: {e}")
+        else:
+            logger.info("[PIPELINE] Step 5/6: AWS sync disabled, skipping")
 
-def _run_social():
-    from app.tasks.celery_app import post_to_social
-    try:
-        post_to_social()
-    except Exception as e:
-        logger.error(f"[SCHED] Social failed: {e}")
+        # Step 6: Social posting
+        if settings.SCHEDULE_SOCIAL_ENABLED:
+            logger.info("[PIPELINE] Step 6/6: Social posting...")
+            try:
+                from app.tasks.celery_app import post_to_social
+                result = post_to_social()
+                logger.info(f"[PIPELINE] Social done: {result}")
+            except Exception as e:
+                logger.error(f"[PIPELINE] Social failed: {e}")
+        else:
+            logger.info("[PIPELINE] Step 6/6: Social disabled, skipping")
 
+        elapsed = round(time.time() - t0, 1)
+        logger.info("=" * 60)
+        logger.info(f"[PIPELINE] Complete in {elapsed}s")
+        logger.info("=" * 60)
 
-def _run_aws_sync():
-    from app.tasks.celery_app import sync_to_aws
-    try:
-        sync_to_aws()
-    except Exception as e:
-        logger.error(f"[SCHED] AWS sync failed: {e}")
-
-
-def _run_categories():
-    from app.tasks.celery_app import update_category_counts
-    try:
-        update_category_counts()
-    except Exception as e:
-        logger.error(f"[SCHED] Categories failed: {e}")
+    finally:
+        _pipeline_lock.release()
 
 
 def _run_cleanup():
-    from app.tasks.celery_app import cleanup_old_articles
+    """Separate cleanup job — runs less frequently."""
     try:
+        from app.tasks.celery_app import cleanup_old_articles
         cleanup_old_articles()
     except Exception as e:
-        logger.error(f"[SCHED] Cleanup failed: {e}")
+        logger.error(f"[CLEANUP] Failed: {e}")
 
 
 def start_scheduler():
-    """Start the in-process scheduler. Called from FastAPI lifespan."""
+    """Start the in-process scheduler. Independent jobs for each pipeline step."""
     global _scheduler
 
     if not settings.SCHEDULER_ENABLED:
-        logger.info("[SCHED] Scheduler disabled")
+        logger.info("[SCHED] Scheduler disabled via SCHEDULER_ENABLED=false")
         return
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Parse interval from config — convert cron minute string to interval minutes
-    def parse_interval(minute_str: str) -> int:
-        """Convert '0,30' → 30, '5,35' → 30, '*/10' → 10"""
-        minute_str = minute_str.strip()
-        if minute_str.startswith("*/"):
-            return int(minute_str[2:])
-        parts = [int(x) for x in minute_str.split(",") if x.strip().isdigit()]
-        if len(parts) >= 2:
-            return parts[1] - parts[0]
-        return 30  # default
+    # 1. Scraping — every 30 min
+    if settings.SCHEDULE_SCRAPE_ENABLED:
+        _scheduler.add_job(
+            lambda: _run_step("scrape", "app.tasks.celery_app.scrape_all_sources"),
+            IntervalTrigger(minutes=30),
+            id="scrape_job", name="News Scraping",
+        )
+        logger.info("[SCHED] ✓ Scraping: every 30 min")
 
-    jobs = [
-        ("scrape", settings.SCHEDULE_SCRAPE_ENABLED, settings.SCHEDULE_SCRAPE_MINUTES, _run_scrape),
-        ("ai", settings.SCHEDULE_AI_ENABLED, settings.SCHEDULE_AI_MINUTES, _run_ai),
-        ("ranking", settings.SCHEDULE_RANKING_ENABLED, settings.SCHEDULE_RANKING_MINUTES, _run_ranking),
-        ("social", settings.SCHEDULE_SOCIAL_ENABLED, settings.SCHEDULE_SOCIAL_MINUTES, _run_social),
-        ("aws_sync", settings.SCHEDULE_AWS_SYNC_ENABLED, settings.SCHEDULE_AWS_SYNC_MINUTES, _run_aws_sync),
-        ("categories", settings.SCHEDULE_CATEGORY_COUNT_ENABLED, settings.SCHEDULE_CATEGORY_MINUTES, _run_categories),
-        ("cleanup", settings.SCHEDULE_CLEANUP_ENABLED, settings.SCHEDULE_CLEANUP_MINUTES, _run_cleanup),
-    ]
+    # 2. AI Processing — every 15 min (more frequent to handle backlogs)
+    if settings.SCHEDULE_AI_ENABLED:
+        _scheduler.add_job(
+            lambda: _run_step("ai", "app.tasks.celery_app.process_ai_batch"),
+            IntervalTrigger(minutes=15),
+            id="ai_job", name="AI Processing",
+        )
+        logger.info("[SCHED] ✓ AI Process: every 15 min")
 
-    for name, enabled, minutes_str, func in jobs:
-        if enabled:
-            interval = parse_interval(minutes_str)
-            _scheduler.add_job(
-                func, IntervalTrigger(minutes=interval),
-                id=name, name=name, replace_existing=True,
-                max_instances=1,  # Don't overlap
-            )
-            logger.info(f"[SCHED] ✓ {name}: every {interval} min")
-        else:
-            logger.info(f"[SCHED] ✗ {name}: disabled")
+    # 3. Ranking — every 30 min
+    if settings.SCHEDULE_RANKING_ENABLED:
+        _scheduler.add_job(
+            lambda: _run_step("ranking", "app.tasks.celery_app.update_top_100_ranking"),
+            IntervalTrigger(minutes=30),
+            id="ranking_job", name="Ranking Update",
+        )
+        logger.info("[SCHED] ✓ Ranking: every 30 min")
+
+    # 4. AWS Sync — every 30 min
+    if settings.SCHEDULE_AWS_SYNC_ENABLED:
+        _scheduler.add_job(
+            lambda: _run_step("sync", "app.tasks.celery_app.sync_to_aws"),
+            IntervalTrigger(minutes=30),
+            id="sync_job", name="AWS Database Sync",
+        )
+        logger.info("[SCHED] ✓ AWS Sync: every 30 min")
+
+    # 5. Cleanup — every 6 hours
+    if settings.SCHEDULE_CLEANUP_ENABLED:
+        _scheduler.add_job(
+            lambda: _run_step("cleanup", "app.tasks.celery_app.cleanup_old_articles"),
+            IntervalTrigger(hours=6),
+            id="cleanup_job", name="Article Cleanup",
+        )
+        logger.info("[SCHED] ✓ Cleanup: every 6 hours")
+
+    # Run everything once immediately on startup
+    _scheduler.add_job(
+        _run_startup_sequence,
+        'date',
+        id="startup_sequence", name="Startup Sequence",
+        misfire_grace_time=120,
+    )
 
     _scheduler.start()
-    logger.info(f"[SCHED] Scheduler started with {len(_scheduler.get_jobs())} jobs")
+    logger.info(f"[SCHED] Scheduler started — {len(_scheduler.get_jobs())} jobs")
+
+
+def _run_step(name, task_path):
+    """Wrapper to run a specific task path."""
+    try:
+        logger.info(f"[SCHED] Triggering {name}...")
+        import importlib
+        mod_name, func_name = task_path.rsplit('.', 1)
+        mod = importlib.import_module(mod_name)
+        func = getattr(mod, func_name)
+        result = func()
+        logger.info(f"[SCHED] {name} complete: {result}")
+    except Exception as e:
+        logger.error(f"[SCHED] {name} failed: {e}")
+
+
+def _run_startup_sequence():
+    """Runs all steps once at startup, sequentially, with a small delay between each."""
+    logger.info("[SCHED] Starting initial startup sequence...")
+    steps = [
+        ("scrape", "app.tasks.celery_app.scrape_all_sources"),
+        ("ai", "app.tasks.celery_app.process_ai_batch"),
+        ("ranking", "app.tasks.celery_app.update_top_100_ranking"),
+        ("sync", "app.tasks.celery_app.sync_to_aws"),
+    ]
+    for name, path in steps:
+        _run_step(name, path)
+        time.sleep(5)
 
 
 def stop_scheduler():
@@ -135,11 +219,11 @@ def stop_scheduler():
 
 
 def get_scheduler_status() -> dict:
-    """Get current scheduler status for admin API."""
     if not _scheduler:
         return {"running": False, "jobs": []}
     return {
         "running": _scheduler.running,
+        "pipeline_interval_min": 30,
         "jobs": [
             {"id": j.id, "name": j.name, "next_run": str(j.next_run_time),
              "trigger": str(j.trigger)}

@@ -30,3 +30,4 @@ aiohttp>=3.10.0
 youtube-transcript-api>=0.6.0
 lxml_html_clean
 requests>=2.31.0
+gunicorn>=22.0.0
