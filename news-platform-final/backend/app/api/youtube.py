@@ -52,6 +52,13 @@ async def save_youtube_article(
             raise HTTPException(status_code=400, detail="No sources available")
 
     from app.services.category_service import category_service
+    import re
+    # Generate slug from title
+    slug_base = re.sub(r'[^\w\s-]', '', data.title.lower()).strip()
+    slug = re.sub(r'[\s_-]+', '-', slug_base)[:80]
+    # Ensure unique slug
+    slug = f"{slug}-yt-{content_hash[:6]}"
+
     article = NewsArticle(
         source_id=source_id,
         original_title=data.title,
@@ -61,14 +68,21 @@ async def save_youtube_article(
         rephrased_content=data.content,
         translated_title=data.title,
         translated_content=data.content,
+        telugu_title=data.telugu_title or "",
+        telugu_content=data.telugu_content or "",
         category=category_service.normalize(data.category or "General"),
+        slug=slug,
         tags=data.tags or [],
         content_hash=content_hash,
-        flag="A",  # Mark as processed immediately since data comes from process endpoint
+        flag="Y",  # YouTube imports go directly to Top News
+        rank_score=500,  # High initial score
         image_url=data.image_url,
         original_language="en",
         published_at=datetime.now(timezone.utc),
+        processed_at=datetime.now(timezone.utc),
         submitted_by="youtube-import",
+        ai_status="completed",
+        scrape_metadata={"ai_method": "youtube_import"},
     )
     db.add(article)
     await db.commit()

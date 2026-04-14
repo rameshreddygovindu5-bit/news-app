@@ -118,6 +118,8 @@ def process_youtube_video(url: str) -> Dict:
         "translated_text": translated_text,
         "rephrased_title": ai_result.get("rephrased_title", ""),
         "rephrased_content": ai_result.get("rephrased_content", ""),
+        "telugu_title": ai_result.get("telugu_title", ""),
+        "telugu_content": ai_result.get("telugu_content", ""),
         "category": ai_result.get("category", "Home"),
         "detected_language": ai_result.get("original_language", "en"),
         "error": None,

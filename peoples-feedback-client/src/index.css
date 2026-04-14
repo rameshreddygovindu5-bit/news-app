@@ -208,3 +208,47 @@ img { object-fit: cover; background-color: #f1f5f9; }
   transition: all .2s ease;
 }
 .back-to-top:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(232,98,26,.5); }
+
+/* ══ FIX 10: Image copyright protection overlay ═══════════════════════ */
+.news-image-wrapper {
+  position: relative;
+  overflow: hidden;
+}
+.news-image-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 153, 51, 0.08) 0%,
+    rgba(0, 0, 128, 0.05) 50%,
+    rgba(19, 136, 8, 0.08) 100%
+  );
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.news-image-wrapper img {
+  filter: saturate(0.92) contrast(1.03) brightness(1.01);
+  transition: filter 0.3s, transform 0.6s;
+}
+.news-image-wrapper:hover img {
+  filter: saturate(1) contrast(1) brightness(1);
+}
+
+/* ══ FIX 1: Mobile responsive improvements ═══════════════════════════ */
+@media (max-width: 640px) {
+  .article-content { font-size: 1rem; line-height: 1.75; }
+  .article-content-telugu { font-size: 1.05rem; line-height: 1.9; }
+  .article-content p, .article-content-telugu p { margin-bottom: 1.25rem; }
+}
+
+/* Ensure mobile scrollable category bar has no visible scrollbar */
+@media (max-width: 768px) {
+  nav.overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  nav.overflow-x-auto > div > button {
+    scroll-snap-align: start;
+  }
+}

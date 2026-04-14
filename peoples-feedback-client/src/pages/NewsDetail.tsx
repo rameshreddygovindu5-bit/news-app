@@ -220,11 +220,11 @@ export default function NewsDetail() {
 
         {/* ── Featured image ── */}
         <div className="max-w-5xl mx-auto px-4 mb-14">
-          <div className="relative overflow-hidden bg-zinc-100 shadow-xl">
+          <div className="relative overflow-hidden bg-zinc-100 shadow-xl news-image-wrapper">
             <img
               src={getImage(article)}
               alt={title}
-              className="w-full aspect-[21/9] max-h-[480px] object-cover"
+              className="w-full aspect-[16/9] sm:aspect-[21/9] max-h-[480px] object-cover"
               onError={handleImgError}
               data-category={article.category}
             />
@@ -340,7 +340,7 @@ export default function NewsDetail() {
                   .map(a => (
                     <Link key={a.id} href={`/news/${a.slug || a.id}`}>
                       <div className="group cursor-pointer space-y-3">
-                        <div className="aspect-video bg-zinc-800 overflow-hidden rounded-sm">
+                        <div className="aspect-video bg-zinc-800 overflow-hidden rounded-sm news-image-wrapper">
                           <img
                             src={getImage(a)}
                             alt=""

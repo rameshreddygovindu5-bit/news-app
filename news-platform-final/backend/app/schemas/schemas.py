@@ -210,6 +210,8 @@ class YouTubeSaveRequest(BaseModel):
     tags: List[str] = []
     image_url: Optional[str] = None
     source_id: Optional[int] = None
+    telugu_title: Optional[str] = None
+    telugu_content: Optional[str] = None
 
 
 # ============ SCHEDULER SCHEMAS ============

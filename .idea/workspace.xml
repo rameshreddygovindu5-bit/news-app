@@ -4,55 +4,40 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="">
+    <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="committed v2 changes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/backend/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/.env.example" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/articles.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/articles.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/polls.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/polls.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/youtube.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/youtube.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/database.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/models/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/models/models.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/schemas/schemas.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/schemas/schemas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/scrapers/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/scrapers/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/services/ai_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/services/ai_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/services/category_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/services/category_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/force_sync.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/init.sql" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/init_db.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/master_fix.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/update_db.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/services/youtube_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/services/youtube_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/auth_server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/check_admin.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/check_db.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/debug_test.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/migrate_aws.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/news_platform.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/simple_server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/test_login.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/docker-compose.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/Dockerfile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/build/asset-manifest.json" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/build/index.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/build/static/css/main.768eb2a5.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/public/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/public/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/App.js" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/App.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/services/api.js" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/services/api.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/styles/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/styles/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/dist/assets/index-B-rUptKG.js" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/dist/assets/index-BdswY3_N.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/update-nginx.sh" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/update-nginx.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/.github/workflows/deploy.yml" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/.github/workflows/deploy.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/dist/index.html" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/dist/pf-logo.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/App.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumFooter.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumFooter.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PollWidget.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PollWidget.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/lib/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/lib/api.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/lib/queryClient.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/lib/queryClient.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Home.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Home.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/News.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/News.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/NewsDetail.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/NewsDetail.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/types/news.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/types/news.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/tailwind.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/tailwind.config.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -82,25 +67,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.zencoder-patch-add-chat-message-raw-content": "true",
-    "RunOnceActivity.zencoder-patch-generate-chat-message-id": "true",
-    "RunOnceActivity.zencoder-patch-migrate-custom-instruction": "true",
-    "RunOnceActivity.zencoder-patch-migrate-repo-info-to-rules": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "C:/Ramesh/news-web-app",
-    "project.structure.last.edited": "Project",
-    "project.structure.proportion": "0.0",
-    "project.structure.side.proportion": "0.0"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.zencoder-patch-add-chat-message-raw-content&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.zencoder-patch-generate-chat-message-id&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.zencoder-patch-migrate-custom-instruction&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.zencoder-patch-migrate-repo-info-to-rules&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Ramesh/news-web-app&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration default="true" type="JetRunConfigurationType">
       <module name="news-web-app" />
@@ -146,7 +131,20 @@
       <option name="presentableId" value="Default" />
       <updated>1775679530407</updated>
     </task>
+    <task id="LOCAL-00001" summary="committed v2 changes">
+      <option name="closed" value="true" />
+      <created>1776202410228</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1776202410228</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="committed v2 changes" />
+    <option name="LAST_COMMIT_MESSAGE" value="committed v2 changes" />
   </component>
   <component name="github-copilot-workspace">
     <instructionFileLocations>

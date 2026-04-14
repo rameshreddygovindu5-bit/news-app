@@ -1,74 +1,94 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# Nginx Config Update — Peoples Feedback Platform
-# Run this ONCE on EC2 to configure Nginx for both sites:
-#   - Public site:  http://<ip>/          → /var/www/peoples-feedback
-#   - Admin UI:     http://<ip>/admin/    → /var/www/peoples-feedback-admin
-#   - API proxy:    http://<ip>/api/      → localhost:8005
+# Nginx Config — Peoples Feedback + Admin UI
 #
-# Usage (on EC2):
-#   sudo bash update-nginx.sh
+# Serves:
+#   - Peoples Feedback client at / (port 80)
+#   - Admin UI at /admin (port 80)
+#   - API proxy at /api/* → backend:8005
+#
+# Usage: sudo bash update-nginx.sh
 # ═══════════════════════════════════════════════════════════════
+
 set -e
 
-PUBLIC_DIR="/var/www/peoples-feedback"
-ADMIN_DIR="/var/www/peoples-feedback-admin"
-API_BACKEND="http://127.0.0.1:8005"
+API_BACKEND="${API_BACKEND:-http://127.0.0.1:8005}"
+DEPLOY_DIR="/var/www/peoples-feedback"
+ADMIN_DIR="/var/www/admin-ui"
 
-echo "[Nginx] Creating directories..."
-mkdir -p $PUBLIC_DIR $ADMIN_DIR
+echo "Creating nginx config..."
 
-cat > /etc/nginx/sites-available/peoples-feedback << NGINX
+sudo mkdir -p "$DEPLOY_DIR" "$ADMIN_DIR"
+
+cat > /tmp/peoples-feedback.conf << NGINX
 server {
     listen 80 default_server;
-    listen [::]:80 default_server;
     server_name _;
 
-    # ── Public Client (SPA) ─────────────────────────────────────────────
-    root $PUBLIC_DIR;
+    # ── Peoples Feedback Client (main site) ──
+    root $DEPLOY_DIR;
     index index.html;
 
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # ── Admin UI (at /admin/) ────────────────────────────────────────────
+    # ── Admin UI ──
     location /admin {
         alias $ADMIN_DIR;
-        index index.html;
         try_files \$uri \$uri/ /admin/index.html;
     }
 
-    # ── API Reverse Proxy ────────────────────────────────────────────────
+    # ── API Proxy ──
     location /api/ {
-        proxy_pass $API_BACKEND;
-        proxy_http_version 1.1;
+        proxy_pass $API_BACKEND/api/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 120s;
-        proxy_connect_timeout 10s;
+        proxy_connect_timeout 30s;
+
+        # CORS headers
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
+
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
     }
 
-    # ── Static Asset Caching ─────────────────────────────────────────────
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2|woff|ttf)$ {
-        expires 1y;
+    # ── API docs ──
+    location /docs {
+        proxy_pass $API_BACKEND/docs;
+        proxy_set_header Host \$host;
+    }
+    location /redoc {
+        proxy_pass $API_BACKEND/redoc;
+        proxy_set_header Host \$host;
+    }
+
+    # ── Static asset caching ──
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 30d;
         add_header Cache-Control "public, immutable";
     }
 
-    # ── Gzip ─────────────────────────────────────────────────────────────
     gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+    gzip_min_length 256;
 }
 NGINX
 
-ln -sf /etc/nginx/sites-available/peoples-feedback /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+sudo cp /tmp/peoples-feedback.conf /etc/nginx/sites-available/peoples-feedback
+sudo ln -sf /etc/nginx/sites-available/peoples-feedback /etc/nginx/sites-enabled/peoples-feedback
+sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null
 
-nginx -t && systemctl reload nginx
-echo "[Nginx] Done! Config updated and reloaded."
-echo "  Public site: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || hostname -I | awk '{print $1}')/"
-echo "  Admin UI:    http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || hostname -I | awk '{print $1}')/admin/"
+echo "Testing nginx config..."
+sudo nginx -t && sudo systemctl reload nginx
+
+echo "✅ Nginx configured successfully"
+echo "   Main site: http://$(hostname -I | awk '{print $1}')"
+echo "   Admin UI:  http://$(hostname -I | awk '{print $1}')/admin"
+echo "   API docs:  http://$(hostname -I | awk '{print $1}')/docs"

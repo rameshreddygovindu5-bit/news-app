@@ -71,14 +71,14 @@ services:
     volumes: [./backend:/app, beat_data:/tmp]
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_API_URL: ""
     restart: unless-stopped
     ports: ["3000:3000"]
-    environment:
-      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://127.0.0.1:8005}
     depends_on:
       backend: {condition: service_healthy}
-    volumes: [./frontend:/app, /app/node_modules]
 
 volumes:
   redis_data:

@@ -86,8 +86,13 @@ const CAT_LOGOS = {
   politics: 'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=400&q=80',
   business: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&q=80',
   tech: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80',
+  health: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400&q=80',
+  science: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=400&q=80',
+  entertainment: 'https://images.unsplash.com/photo-1603190287605-e6ade32fa852?w=400&q=80',
+  events: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&q=80',
+  sports: 'https://images.unsplash.com/photo-1461896836934-bd45ba6b0e28?w=400&q=80',
   surveys: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&q=80',
-  polls: 'https://images.unsplash.com/photo-1540910419892-4a39d20b2944?w=400&q=80'
+  polls: 'https://images.unsplash.com/photo-1540910419892-4a39d20b2944?w=400&q=80',
 };
 const getImg = (u, c) => u || CAT_LOGOS[(c||'').toLowerCase().trim()] || CAT_LOGOS.home;
 
@@ -717,7 +722,7 @@ function YouTubePage() {
   const [url,setUrl]=useState('');const [result,setResult]=useState(null);const [ld,setLd]=useState(false);const [saving,setSaving]=useState(false);const [sources,setSrc]=useState([]);const [srcId,setSrcId]=useState('');const toast=useToast();
   useEffect(()=>{api.getSources().then(r=>setSrc(r.data)).catch(()=>{})},[]);
   const process=async()=>{if(!url){toast.show('Enter a YouTube URL','warn');return;}setLd(true);setResult(null);try{const r=await api.processYouTube(url,parseInt(srcId)||undefined);setResult(r.data);toast.show('Transcript processed ✓')}catch(e){toast.show(e.response?.data?.detail||'Failed','error')}setLd(false)};
-  const save=async()=>{if(!result)return;setSaving(true);try{await api.saveYouTubeArticle({video_url:result.video_url,title:result.rephrased_title,content:result.rephrased_content,category:result.category,tags:[],image_url:result.thumbnail_url,source_id:parseInt(srcId)||undefined});toast.show('Saved to Top News ✓');setResult(null);setUrl('')}catch(e){toast.show(e.response?.data?.detail||'Failed','error')}setSaving(false)};
+  const save=async()=>{if(!result)return;setSaving(true);try{await api.saveYouTubeArticle({video_url:result.video_url,title:result.rephrased_title,content:result.rephrased_content,category:result.category,tags:[],image_url:result.thumbnail_url,source_id:parseInt(srcId)||undefined,telugu_title:result.telugu_title||'',telugu_content:result.telugu_content||''});toast.show('Saved to Top News ✓');setResult(null);setUrl('')}catch(e){toast.show(e.response?.data?.detail||'Failed','error')}setSaving(false)};
   return (
     <div><toast.El/>
       <div className="page-header"><h2>YouTube Import</h2></div>

@@ -72,12 +72,19 @@ async def create_tables():
 
 
 async def _seed_defaults():
-    """Insert default categories and admin user if the DB is fresh."""
-    from app.models.models import Category, AdminUser
+    """Insert default categories, admin user, and Peoples Feedback source if DB is fresh."""
+    from app.models.models import Category, AdminUser, NewsSource
     from app.services.auth_service import hash_password
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     async with AsyncSessionLocal() as db:
+        # ── Enable pg_trgm for similarity search (if PostgreSQL) ───────
+        try:
+            await db.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
         # ── Default categories ────────────────────────────────────────
         existing_cats = (await db.execute(select(Category))).scalars().all()
         if not existing_cats:
@@ -109,3 +116,29 @@ async def _seed_defaults():
                 "[DB] Default admin user created — username: admin, password: admin123"
                 " — CHANGE THIS IN PRODUCTION!"
             )
+
+        # ── Default "Peoples Feedback" source ─────────────────────────
+        from sqlalchemy import or_
+        existing_pf = (
+            await db.execute(
+                select(NewsSource).where(
+                    or_(
+                        NewsSource.name.ilike("Peoples Feedback"),
+                        NewsSource.name.ilike("PeoplesFeedback"),
+                    )
+                )
+            )
+        ).scalar_one_or_none()
+        if not existing_pf:
+            db.add(NewsSource(
+                name="Peoples Feedback",
+                url="https://www.peoples-feedback.com",
+                language="en",
+                scraper_type="manual",
+                is_enabled=True,
+                is_paused=False,
+                credibility_score=1.0,
+                priority=10,
+            ))
+            await db.commit()
+            logger.info("[DB] Default 'Peoples Feedback' source created")

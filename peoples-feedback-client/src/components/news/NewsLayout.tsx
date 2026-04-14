@@ -48,7 +48,7 @@ const timeAgo = (d?: string) => {
 const HeroCard = ({ article }: { article: NewsArticle }) => (
   <Link href={`/news/${article.slug || article.id}`}>
     <div className="group cursor-pointer relative overflow-hidden bg-[var(--pf-navy)] rounded-2xl shadow-2xl transform transition-all duration-500 hover:scale-[1.015] hover:shadow-3xl">
-      <div className="aspect-[21/9] md:aspect-[2.5/1] relative">
+      <div className="aspect-[16/9] sm:aspect-[21/9] md:aspect-[2.5/1] relative news-image-wrapper">
         <img
           src={getImage(article)}
           className="w-full h-full object-cover opacity-60 group-hover:opacity-70 group-hover:scale-[1.04] transition-all duration-700"
@@ -57,11 +57,11 @@ const HeroCard = ({ article }: { article: NewsArticle }) => (
           data-category={article.category}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-        {/* Saffron overlay (not purple) */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-saffron)]/15 via-transparent to-[var(--pf-green)]/15 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+        {/* Tricolor overlay for copyright differentiation */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-saffron)]/15 via-transparent to-[var(--pf-green)]/15 opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
       </div>
         {/* Bottom text overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
+        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 md:p-10">
           <div className="flex items-center gap-3 mb-4">
             {article.category && (
               <span className="inline-block bg-[var(--pf-saffron)] text-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest rounded-full shadow-lg">
@@ -107,7 +107,7 @@ const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "l
     <Link href={`/news/${article.slug || article.id}`}>
       <div className="group cursor-pointer h-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:border-[var(--pf-saffron)]/30 transition-all duration-300">
         {size !== "sm" && (
-          <div className="aspect-video relative overflow-hidden">
+          <div className="aspect-video relative overflow-hidden news-image-wrapper">
             <img
               src={getImage(article)}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-600"
@@ -128,7 +128,7 @@ const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "l
             )}
           </div>
         )}
-        <div className="p-5 flex flex-col h-fit">
+        <div className="p-3 sm:p-5 flex flex-col h-fit">
           {size === "sm" && article.category && (
             <span className="inline-block bg-[var(--pf-saffron)] text-white px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full mb-3 w-fit">
               {article.category}
@@ -408,14 +408,20 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
           ))}
 
           {/* Load More */}
-          {hasMore && (
-            <div className="flex justify-center pt-6">
+          {hasMore && onLoadMore && (
+            <div className="flex justify-center pt-8 pb-4">
               <button
-                onClick={onLoadMore}
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLoadMore(); }}
                 disabled={isLoadingMore}
-                className="px-10 py-3 border-2 border-[var(--pf-navy)] text-[var(--pf-navy)] font-black text-sm uppercase tracking-wider rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all disabled:opacity-50"
+                className="px-10 py-3.5 border-2 border-[var(--pf-navy)] text-[var(--pf-navy)] font-black text-sm uppercase tracking-wider rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all disabled:opacity-50 active:scale-95"
               >
-                {isLoadingMore ? "Loading…" : "Load More Headlines"}
+                {isLoadingMore ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </span>
+                ) : "Load More Headlines"}
               </button>
             </div>
           )}

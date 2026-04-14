@@ -86,6 +86,8 @@ def article_to_response(article, source_name: str = None) -> dict:
         "flag": article.flag, "rank_score": article.rank_score or 0,
         "image_url": article.image_url, "author": article.author,
         "submitted_by": article.submitted_by,
+        "ai_status": getattr(article, 'ai_status', 'unknown'),
+        "is_posted_fb": getattr(article, 'is_posted_fb', False),
         "created_at": article.created_at, "updated_at": article.updated_at,
         "processed_at": article.processed_at, "source_name": source_name,
     }

@@ -17,6 +17,7 @@ on:
     branches: [main, master]
     paths:
       - 'peoples-feedback-client/**'
+      - 'news-platform-final/peoples-feedback-client/**'
   workflow_dispatch:
 
 defaults:
