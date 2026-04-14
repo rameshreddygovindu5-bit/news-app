@@ -1,11 +1,11 @@
-# Auto-deploy Peoples Feedback Client to EC2
+# Auto-deploy to EC2 — Peoples Feedback Platform
 # Instance: i-0e448dd106cf9aeed (32.193.27.142)
 #
 # GitHub Secrets required:
-#   EC2_HOST     — EC2 public IP
-#   EC2_USER     — SSH user (ubuntu or ec2-user)
+#   EC2_HOST     — EC2 public IP (32.193.27.142)
+#   EC2_USER     — SSH user (ubuntu)
 #   EC2_SSH_KEY  — Full private SSH key (PEM contents)
-#   VITE_API_URL — Backend API URL
+#   VITE_API_URL — Leave empty (Nginx proxies /api/ → localhost:8005)
 
 name: Deploy to EC2
 
@@ -20,94 +20,135 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Node (for both frontend builds) ───────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: peoples-feedback-client/package-lock.json
 
-      - name: Install & Build
+      # ── Build: Public Client (Vite) ───────────────────────────────────
+      - name: Build Public Client
         working-directory: peoples-feedback-client
         run: |
           npm ci || npm install
           npm run build
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_URL: ""   # Nginx proxies /api/ -> localhost:8005
 
+      # ── Build: Admin UI (React CRA) ───────────────────────────────────
+      - name: Build Admin UI
+        working-directory: news-platform-final/frontend
+        run: |
+          npm ci || npm install
+          npm run build
+        env:
+          REACT_APP_API_URL: ""   # Nginx proxies /api/ -> localhost:8005
+
+      # ── Package both builds ───────────────────────────────────────────
+      - name: Package builds
+        run: |
+          tar czf /tmp/public-dist.tar.gz  -C peoples-feedback-client/dist .
+          tar czf /tmp/admin-dist.tar.gz   -C news-platform-final/frontend/build .
+          tar czf /tmp/backend.tar.gz      -C news-platform-final/backend \
+            --exclude='./__pycache__' \
+            --exclude='./venv' \
+            --exclude='./*.db' \
+            .
+
+      # ── SSH Deploy to EC2 ─────────────────────────────────────────────
       - name: Deploy to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          SSH_KEY:  ${{ secrets.EC2_SSH_KEY }}
         run: |
-          # Validate secrets
-          if [ -z "$EC2_HOST" ]; then echo "❌ EC2_HOST secret missing"; exit 1; fi
-          if [ -z "$EC2_USER" ]; then echo "❌ EC2_USER secret missing"; exit 1; fi
-          if [ -z "$SSH_KEY" ]; then echo "❌ EC2_SSH_KEY secret missing"; exit 1; fi
+          if [ -z "$EC2_HOST" ]; then echo "EC2_HOST secret missing"; exit 1; fi
+          if [ -z "$EC2_USER" ]; then echo "EC2_USER secret missing"; exit 1; fi
+          if [ -z "$SSH_KEY"  ]; then echo "EC2_SSH_KEY secret missing"; exit 1; fi
 
-          # Write SSH key
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/ec2.pem
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # Package build
-          tar czf /tmp/dist.tar.gz -C peoples-feedback-client/dist .
-
-          # Upload
+          # Upload all three tarballs
           scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
-            /tmp/dist.tar.gz "$EC2_USER@$EC2_HOST:/tmp/dist.tar.gz"
+            /tmp/public-dist.tar.gz \
+            /tmp/admin-dist.tar.gz \
+            /tmp/backend.tar.gz \
+            "$EC2_USER@$EC2_HOST:/tmp/"
 
-          # Deploy on EC2
+          # Run remote deploy
           ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'REMOTE'
             set -e
-            
-            # 1. Update Frontend
-            DEPLOY_DIR="/var/www/peoples-feedback"
-            sudo mkdir -p $DEPLOY_DIR
-            sudo rm -rf $DEPLOY_DIR/*
-            sudo tar xzf /tmp/dist.tar.gz -C $DEPLOY_DIR
+            echo "========================================"
+            echo "  Peoples Feedback — Deploying..."
+            echo "========================================"
 
-            # Set ownership
-            if id "nginx" &>/dev/null; then
-              sudo chown -R nginx:nginx $DEPLOY_DIR
-            elif id "www-data" &>/dev/null; then
-              sudo chown -R www-data:www-data $DEPLOY_DIR
+            # ── 1. Deploy Public Frontend ───────────────────────────────
+            PUBLIC_DIR="/var/www/peoples-feedback"
+            sudo mkdir -p $PUBLIC_DIR
+            sudo rm -rf $PUBLIC_DIR/*
+            sudo tar xzf /tmp/public-dist.tar.gz -C $PUBLIC_DIR
+            sudo chown -R www-data:www-data $PUBLIC_DIR 2>/dev/null || \
+              sudo chown -R nginx:nginx $PUBLIC_DIR 2>/dev/null || true
+            echo "[1/3] Public frontend deployed to $PUBLIC_DIR"
+
+            # ── 2. Deploy Admin UI ──────────────────────────────────────
+            ADMIN_DIR="/var/www/peoples-feedback-admin"
+            sudo mkdir -p $ADMIN_DIR
+            sudo rm -rf $ADMIN_DIR/*
+            sudo tar xzf /tmp/admin-dist.tar.gz -C $ADMIN_DIR
+            sudo chown -R www-data:www-data $ADMIN_DIR 2>/dev/null || \
+              sudo chown -R nginx:nginx $ADMIN_DIR 2>/dev/null || true
+            echo "[2/3] Admin UI deployed to $ADMIN_DIR"
+
+            # ── 3. Deploy Backend ───────────────────────────────────────
+            BACKEND_DIR="$HOME/news-platform-final/backend"
+            mkdir -p $BACKEND_DIR
+            tar xzf /tmp/backend.tar.gz -C $BACKEND_DIR
+            echo "[3/4] Backend files updated in $BACKEND_DIR"
+
+            # Install/update Python deps
+            cd $BACKEND_DIR
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+            source venv/bin/activate
+            pip install -r requirements.txt -q
+
+            # Run DB migration
+            python migrate_aws.py || echo "Migration warnings (may already be applied)"
+
+            # ── 4. Restart Backend ──────────────────────────────────────
+            PID=$(sudo lsof -t -i :8005 2>/dev/null || true)
+            if [ -n "$PID" ]; then
+              echo "Stopping existing backend (PID: $PID)..."
+              sudo kill -9 $PID 2>/dev/null || true
+              sleep 2
             fi
 
-            rm -f /tmp/dist.tar.gz
+            nohup uvicorn app.main:app \
+              --host 0.0.0.0 \
+              --port 8005 \
+              --workers 2 \
+              >> $BACKEND_DIR/backend.log 2>&1 &
+            disown
+            sleep 3
+            echo "[4/4] Backend restarted on port 8005"
+
+            # ── 5. Reload Nginx ─────────────────────────────────────────
             sudo nginx -t && sudo systemctl reload nginx
-            
-            # 2. Update Backend (Python/Uvicorn)
-            echo "Searching for news-platform-final project directory..."
-            PROJECT_DIR=$(find $HOME -type d -name "news-platform-final" -print -quit 2>/dev/null)
-            
-            if [ -n "$PROJECT_DIR" ]; then
-              echo "✅ Found project in $PROJECT_DIR. Updating code..."
-              cd "$PROJECT_DIR"
-              git pull origin main || echo "⚠️ git pull failed."
-              
-              cd backend
-              # Kill existing process on 8005
-              PID=$(sudo lsof -t -i :8005 || true)
-              if [ -n "$PID" ]; then
-                echo "Stopping existing backend (PID: $PID)..."
-                sudo kill -9 $PID
-              fi
-              
-              # Re-setup venv if missing
-              if [ ! -d "venv" ]; then
-                python3 -m venv venv
-              fi
-              
-              echo "Starting backend..."
-              source venv/bin/activate
-              pip install -r requirements.txt
-              nohup uvicorn app.main:app --host 0.0.0.0 --port 8005 > backend.log 2>&1 &
-              disown
-            else
-              echo "⚠️ Could not find project directory for backend update."
-            fi
+            echo "[5/5] Nginx reloaded"
 
-            echo "✅ Full Deploy complete: $(date)"
+            # Clean up
+            rm -f /tmp/public-dist.tar.gz /tmp/admin-dist.tar.gz /tmp/backend.tar.gz
+
+            echo "========================================"
+            echo "  Deploy complete: $(date)"
+            echo "  Public:  http://$HOSTNAME"
+            echo "  Admin:   http://$HOSTNAME/admin/"
+            echo "  Backend: http://$HOSTNAME:8005/docs"
+            echo "========================================"
           REMOTE
