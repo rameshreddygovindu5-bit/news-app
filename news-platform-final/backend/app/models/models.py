@@ -49,9 +49,13 @@ class NewsArticle(Base):
     translated_title = Column(Text)
     translated_content = Column(Text)
 
-    # AI-rephrased content
+    # AI-rephrased content (English)
     rephrased_title = Column(Text)
     rephrased_content = Column(Text)
+
+    # AI-rephrased content (Telugu)
+    telugu_title = Column(Text)
+    telugu_content = Column(Text)
 
     # Categorization
     category = Column(String(100))
@@ -175,6 +179,26 @@ class Category(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     article_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Poll(Base):
+    __tablename__ = "polls"
+    id = Column(Integer, primary_key=True, index=True)
+    question = Column(String(500), nullable=False)
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    expires_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    options = relationship("PollOption", back_populates="poll", cascade="all, delete-orphan")
+
+
+class PollOption(Base):
+    __tablename__ = "poll_options"
+    id = Column(Integer, primary_key=True, index=True)
+    poll_id = Column(Integer, ForeignKey("polls.id", ondelete="CASCADE"), nullable=False)
+    option_text = Column(String(255), nullable=False)
+    votes_count = Column(Integer, default=0)
+    poll = relationship("Poll", back_populates="options")
 
 # Alias for backward compatibility
 SchedulerLog = JobExecutionLog

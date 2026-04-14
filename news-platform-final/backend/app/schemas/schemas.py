@@ -18,6 +18,7 @@ class ScraperTypeEnum(str, Enum):
     HTML = "html"
     API = "api"
     MANUAL = "manual"
+    CNN = "cnn"
 
 class RoleEnum(str, Enum):
     ADMIN = "admin"
@@ -69,6 +70,8 @@ class NewsArticleUpdate(BaseModel):
     original_content: Optional[str] = None
     rephrased_title: Optional[str] = None
     rephrased_content: Optional[str] = None
+    telugu_title: Optional[str] = None
+    telugu_content: Optional[str] = None
     category: Optional[str] = None
     slug: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -87,10 +90,12 @@ class NewsArticleResponse(BaseModel):
     translated_content: Optional[str] = None
     rephrased_title: Optional[str] = None
     rephrased_content: Optional[str] = None
+    telugu_title: Optional[str] = None
+    telugu_content: Optional[str] = None
     category: Optional[str] = None
     slug: Optional[str] = None
     tags: List[str] = []
-    content_hash: str
+    content_hash: Optional[str] = None
     is_duplicate: bool
     flag: str
     rank_score: float = 0
@@ -192,6 +197,8 @@ class YouTubeProcessResponse(BaseModel):
     translated_text: Optional[str] = None
     rephrased_title: Optional[str] = None
     rephrased_content: Optional[str] = None
+    telugu_title: Optional[str] = None
+    telugu_content: Optional[str] = None
     category: Optional[str] = None
     error: Optional[str] = None
 
@@ -208,17 +215,24 @@ class YouTubeSaveRequest(BaseModel):
 # ============ SCHEDULER SCHEMAS ============
 
 class SchedulerLogResponse(BaseModel):
+    """
+    Scheduler job log entry.
+    Field names match JobExecutionLog model columns exactly.
+    Aliases provide backward-compatibility for any clients using old names.
+    """
     id: int
-    job_type: str
-    source_id: Optional[int] = None
+    job_name: str                        # model: job_name  (was: job_type)
+    run_id: Optional[str] = None
+    triggered_by: str = "cron"
     status: str
-    articles_processed: int = 0
-    error_message: Optional[str] = None
+    rows_ok: int = 0                     # model: rows_ok   (was: articles_processed)
+    rows_err: int = 0
+    error_summary: Optional[str] = None  # model: error_summary (was: error_message)
     started_at: datetime
-    completed_at: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
-    class Config:
-        from_attributes = True
+    ended_at: Optional[datetime] = None  # model: ended_at  (was: completed_at)
+    duration_s: Optional[float] = None   # model: duration_s (was: duration_seconds)
+
+    model_config = {"from_attributes": True}
 
 class SchedulerAction(BaseModel):
     action: str

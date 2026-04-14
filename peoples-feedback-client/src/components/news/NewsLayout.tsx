@@ -1,168 +1,156 @@
+/**
+ * NewsLayout — Main article grid for Home and News pages.
+ * Fixes:
+ *   - Breaking ticker uses Indian flag navy (not purple)
+ *   - Category section headers use saffron/navy (not purple gradient)
+ *   - catGroups shows ALL categories (not just first 5)
+ *   - HeroCard overlay uses saffron (not purple)
+ *   - Proper image fallback with alt text
+ */
 import { useMemo } from "react";
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
 import { TrendingUp, ArrowRight, Clock, Newspaper } from "lucide-react";
 import { NewsArticle, getTitle, getSummary, getImage, categoryPlaceholder } from "@/types/news";
 import { ShareBar } from "@/components/news/ShareMenu";
+import { PollWidget } from "@/components/news/PollWidget";
+import { motion } from "framer-motion";
 
-/** Handle broken images — fall back to category placeholder */
 const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const el = e.currentTarget;
   if (!el.dataset.fallback) {
     el.dataset.fallback = "1";
-    el.src = categoryPlaceholder(el.dataset.category || 'news');
+    el.src = categoryPlaceholder(el.dataset.category);
   }
 };
-import { motion } from "framer-motion";
 
 interface Props {
-  articles: NewsArticle[];
-  isLoading?: boolean;
-  onLoadMore?: () => void;
-  hasMore?: boolean;
+  articles:       NewsArticle[];
+  isLoading?:     boolean;
+  onLoadMore?:    () => void;
+  hasMore?:       boolean;
   isLoadingMore?: boolean;
   selectedCategory?: string;
 }
 
 const timeAgo = (d?: string) => {
-  if (!d) return 'Just now';
+  if (!d) return "Just now";
   try {
     const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1)    return "Just now";
+    if (mins < 60)   return `${mins}m ago`;
     if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-    if (mins < 10080) return `${Math.floor(mins / 1440)}d ago`;
-    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(d));
-  } catch { return ''; }
+    if (mins < 10080)return `${Math.floor(mins / 1440)}d ago`;
+    return new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(new Date(d));
+  } catch { return ""; }
 };
 
-/* ── Hero Card — Enhanced dramatic design ── */
+/* ── Hero Card ───────────────────────────────────────────────────────── */
 const HeroCard = ({ article }: { article: NewsArticle }) => (
   <Link href={`/news/${article.slug || article.id}`}>
-    <div className="group cursor-pointer relative overflow-hidden bg-gradient-to-br from-gray-900 to-black rounded-2xl shadow-2xl transform transition-all duration-500 hover:scale-[1.02] hover:shadow-3xl">
+    <div className="group cursor-pointer relative overflow-hidden bg-[var(--pf-navy)] rounded-2xl shadow-2xl transform transition-all duration-500 hover:scale-[1.015] hover:shadow-3xl">
       <div className="aspect-[21/9] md:aspect-[2.5/1] relative">
-        {article.image_url && article.image_url.trim() !== '' ? (
-          <>
-            <img src={getImage(article)} className="w-full h-full object-cover opacity-60 group-hover:opacity-70 group-hover:scale-[1.05] transition-all duration-700" alt="" onError={handleImgError} data-category={article.category} />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-            {/* Animated overlay */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-orange)]/20 via-transparent to-[var(--pf-purple)]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          </>
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] flex items-center justify-center p-8">
-            <div className="text-center">
-              <h3 className="text-2xl md:text-4xl font-black text-white mb-4 leading-tight" style={{ fontFamily: 'var(--font-headline)' }}>
-                {getTitle(article)}
-              </h3>
-              <p className="text-white/80 text-sm md:text-base line-clamp-4 leading-relaxed max-w-2xl mx-auto">
-                {getSummary(article, 150)}
-              </p>
-            </div>
-          </div>
-        )}
-      <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
-        <div className="flex items-center gap-3 mb-4">
-          {article.category && (
-            <span className="inline-block bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-4 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full shadow-lg">
-              {article.category}
-            </span>
-          )}
-          <span className="flex items-center gap-2 text-white/60 text-[11px] font-medium">
-            <span className="w-2 h-2 bg-[var(--pf-green)] rounded-full animate-pulse"></span>
-            Latest News
-          </span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl transform transition-all duration-300 group-hover:scale-105" style={{ fontFamily: 'var(--font-headline)' }}>
-          {getTitle(article)}
-        </h1>
-        <p className="text-white/80 text-sm sm:text-lg md:text-xl line-clamp-3 max-w-3xl mb-4 leading-relaxed" style={{ fontFamily: 'var(--font-serif)' }}>
-          {getSummary(article, 200)}
-        </p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 text-white/60 text-[10px] sm:text-[12px] font-medium">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              {timeAgo(article.published_at)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-white/40 group-hover:text-white transition-colors duration-300">
-            <span className="text-[11px] font-medium uppercase tracking-wider">Read More</span>
-            <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform duration-300" />
-          </div>
-        </div>
+        <img
+          src={getImage(article)}
+          className="w-full h-full object-cover opacity-60 group-hover:opacity-70 group-hover:scale-[1.04] transition-all duration-700"
+          alt={getTitle(article)}
+          onError={handleImgError}
+          data-category={article.category}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+        {/* Saffron overlay (not purple) */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-saffron)]/15 via-transparent to-[var(--pf-green)]/15 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       </div>
-    </div>
-    </div>
-  </Link>
-);
-
-/* ── Article Card — Enhanced modern design ── */
-const ArticleCard = ({ article, size = 'md' }: { article: NewsArticle; size?: 'lg' | 'md' | 'sm' }) => (
-  <motion.div 
-    initial={{ opacity: 0, y: 15 }} 
-    whileInView={{ opacity: 1, y: 0 }} 
-    whileHover={{ y: -8 }}
-    viewport={{ once: true }}
-    className="h-full"
-  >
-    <Link href={`/news/${article.slug || article.id}`}>
-      <div className="group cursor-pointer h-full bg-white/70 backdrop-blur-sm rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden transform transition-all duration-500 hover:shadow-[0_20px_50px_rgb(0,0,0,0.12)] hover:border-[var(--pf-orange)]/30">
-        {size !== 'sm' && (
-          <div className="aspect-video relative overflow-hidden">
-            {article.image_url && article.image_url.trim() !== '' ? (
-              <>
-                <img src={getImage(article)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" onError={handleImgError} data-category={article.category} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <div className="absolute inset-0 bg-[var(--pf-orange)]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              </>
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-[var(--pf-orange)]/30 via-[var(--pf-blue)]/30 to-[var(--pf-purple)]/30 flex items-center justify-center p-6">
-                <Newspaper className="w-12 h-12 text-white/50" />
-              </div>
-            )}
+        {/* Bottom text overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
+          <div className="flex items-center gap-3 mb-4">
             {article.category && (
-              <span className="absolute top-4 left-4 bg-white/90 backdrop-blur-md text-[var(--pf-navy)] px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] rounded-full shadow-lg border border-gray-100">
+              <span className="inline-block bg-[var(--pf-saffron)] text-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest rounded-full shadow-lg">
                 {article.category}
               </span>
             )}
-            {/* Pulsing indicator for top news */}
-            {article.rank_score && article.rank_score > 80 && (
-              <div className="absolute top-4 right-4 w-2 h-2 bg-[var(--pf-red)] rounded-full shadow-[0_0_8px_var(--pf-red)]">
-                <div className="absolute inset-0 rounded-full bg-[var(--pf-red)] animate-ping"></div>
+            <span className="flex items-center gap-1.5 text-white/60 text-[11px] font-medium">
+              <span className="w-2 h-2 bg-[var(--pf-green)] rounded-full animate-pulse" />
+              Latest
+            </span>
+          </div>
+          <h1
+            className="text-2xl sm:text-3xl md:text-5xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl group-hover:scale-[1.01] transition-transform duration-300"
+            style={{ fontFamily: "var(--font-headline)" }}
+          >
+            {getTitle(article)}
+          </h1>
+          <p className="text-white/80 text-sm sm:text-lg line-clamp-2 max-w-3xl mb-4 leading-relaxed">
+            {getSummary(article, 200)}
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-white/60 text-[11px] font-medium">
+              <Clock className="w-3.5 h-3.5" /> {timeAgo(article.published_at)}
+            </span>
+            <span className="flex items-center gap-1.5 text-white/60 group-hover:text-white transition-colors text-[11px] font-medium uppercase tracking-wider">
+              Read More <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </span>
+          </div>
+        </div>
+      </div>
+    </Link>
+);
+
+/* ── Article Card ────────────────────────────────────────────────────── */
+const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "lg" | "md" | "sm" }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 15 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true }}
+    whileHover={{ y: -6 }}
+    className="h-full"
+  >
+    <Link href={`/news/${article.slug || article.id}`}>
+      <div className="group cursor-pointer h-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:border-[var(--pf-saffron)]/30 transition-all duration-300">
+        {size !== "sm" && (
+          <div className="aspect-video relative overflow-hidden">
+            <img
+              src={getImage(article)}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-600"
+              alt={getTitle(article)}
+              onError={handleImgError}
+              data-category={article.category}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+            {article.category && (
+              <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-[var(--pf-navy)] px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full shadow-sm">
+                {article.category}
+              </span>
+            )}
+            {article.rank_score > 80 && (
+              <div className="absolute top-3 right-3 w-2 h-2 bg-[var(--pf-saffron)] rounded-full">
+                <div className="absolute inset-0 rounded-full bg-[var(--pf-saffron)] animate-ping" />
               </div>
             )}
           </div>
         )}
-        <div className="p-6 flex flex-col h-fit">
-          {size === 'sm' && article.category && (
-            <span className="inline-block bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full mb-4 w-fit">
+        <div className="p-5 flex flex-col h-fit">
+          {size === "sm" && article.category && (
+            <span className="inline-block bg-[var(--pf-saffron)] text-white px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full mb-3 w-fit">
               {article.category}
             </span>
           )}
-          <h3 className={`font-black tracking-tight text-gray-950 mb-4 group-hover:text-[var(--pf-orange)] transition-colors duration-300 leading-[1.15] ${size === 'lg' ? 'text-2xl' : size === 'md' ? 'text-xl' : 'text-lg'}`} style={{ fontFamily: 'var(--font-headline)' }}>
+          <h3
+            className={`font-black text-zinc-900 mb-3 group-hover:text-[var(--pf-saffron)] transition-colors leading-tight ${
+              size === "lg" ? "text-xl" : size === "md" ? "text-lg" : "text-base"
+            }`}
+            style={{ fontFamily: "var(--font-headline)" }}
+          >
             {getTitle(article)}
           </h3>
-          <p className={`text-gray-600 leading-relaxed mb-6 line-clamp-3 ${size === 'lg' ? 'text-base' : 'text-sm'}`} style={{ fontFamily: 'var(--font-serif)' }}>
-            {getSummary(article, 160)}
+          <p className={`text-zinc-500 leading-relaxed mb-4 line-clamp-3 ${size === "lg" ? "text-sm" : "text-xs"}`}>
+            {getSummary(article, 150)}
           </p>
-          
-          <div className="mt-auto pt-6 border-t border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-                 <img src="/pf-logo.png" className="w-4 h-4 object-contain opacity-50" />
-              </div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                {timeAgo(article.published_at)}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2 group/btn">
-              <span className="text-[10px] font-black uppercase tracking-widest text-transparent bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] bg-clip-text opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
-                Explore
-              </span>
-              <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-[var(--pf-orange)] group-hover:text-white transition-all duration-300">
-                <ArrowRight className="w-4 h-4 transform transition-transform duration-300" />
-              </div>
+          <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-400">
+              {timeAgo(article.published_at)}
+            </span>
+            <div className="w-7 h-7 rounded-full bg-zinc-50 flex items-center justify-center group-hover:bg-[var(--pf-saffron)] group-hover:text-white transition-all">
+              <ArrowRight className="w-3.5 h-3.5" />
             </div>
           </div>
         </div>
@@ -171,26 +159,28 @@ const ArticleCard = ({ article, size = 'md' }: { article: NewsArticle; size?: 'l
   </motion.div>
 );
 
-/* ── Ranked Item — Enhanced trending design ── */
+/* ── Ranked Item ─────────────────────────────────────────────────────── */
 const RankedItem = ({ article, rank }: { article: NewsArticle; rank: number }) => (
   <Link href={`/news/${article.slug || article.id}`}>
-    <div className="group cursor-pointer flex gap-4 py-4 border-b border-gray-100 last:border-0 hover:bg-gradient-to-r hover:from-[var(--pf-orange)]/5 hover:to-[var(--pf-pink)]/5 transition-all duration-300 rounded-lg px-3">
-      <div className="relative">
-        <span className="text-3xl font-black text-transparent bg-gradient-to-b from-gray-300 to-gray-500 group-hover:from-[var(--pf-orange)] group-hover:to-[var(--pf-pink)] group-hover:bg-clip-text transition-all duration-300 w-10 shrink-0 leading-none" style={{ fontFamily: 'var(--font-headline)' }}>
-          {rank}
-        </span>
-        <div className="absolute -inset-1 bg-gradient-to-r from-[var(--pf-orange)]/20 to-[var(--pf-pink)]/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
-      </div>
+    <div className="group cursor-pointer flex gap-4 py-4 border-b border-gray-100 last:border-0 hover:bg-[var(--pf-saffron)]/5 transition-colors rounded-lg px-2">
+      <span
+        className="text-3xl font-black text-zinc-300 group-hover:text-[var(--pf-saffron)] transition-colors w-8 shrink-0 leading-none"
+        style={{ fontFamily: "var(--font-headline)" }}
+      >
+        {rank}
+      </span>
       <div className="min-w-0 flex-1">
-        <h4 className="font-bold text-gray-900 text-sm leading-snug group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-[var(--pf-orange)] group-hover:to-[var(--pf-pink)] group-hover:bg-clip-text transition-all duration-300 line-clamp-2">
+        <h4 className="font-bold text-zinc-900 text-sm leading-snug group-hover:text-[var(--pf-saffron)] transition-colors line-clamp-2">
           {getTitle(article)}
         </h4>
-        <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500 font-medium">
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-[var(--pf-green)] rounded-full"></span>
-            {article.category}
-          </span>
-          <span>·</span>
+        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-zinc-400 font-medium">
+          {article.category && (
+            <>
+              <span className="w-1.5 h-1.5 bg-[var(--pf-green)] rounded-full" />
+              <span>{article.category}</span>
+              <span>·</span>
+            </>
+          )}
           <span>{timeAgo(article.published_at)}</span>
         </div>
       </div>
@@ -198,47 +188,150 @@ const RankedItem = ({ article, rank }: { article: NewsArticle; rank: number }) =
   </Link>
 );
 
-/* ── Main Layout ── */
-export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoadingMore }: Props) {
+/* ── Skeleton ─────────────────────────────────────────────────────────── */
+const SkeletonLayout = () => (
+  <div className="max-w-7xl mx-auto px-4 space-y-8">
+    <div className="skeleton h-[400px] w-full rounded-2xl" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {[1,2,3,4].map(i => (
+        <div key={i} className="space-y-3">
+          <div className="skeleton h-40 rounded-xl" />
+          <div className="skeleton h-4 rounded w-4/5" />
+          <div className="skeleton h-3 rounded w-3/5" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+/* ── Main Layout ─────────────────────────────────────────────────────── */
+export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoadingMore, selectedCategory }: Props) {
   const { featured, secondary, catGroups, allSorted } = useMemo(() => {
-    if (!articles?.length) return { featured: null, secondary: [], catGroups: {} as Record<string, NewsArticle[]>, latest: [], allSorted: [] };
-    const sorted = [...articles].sort((a, b) => (b.rank_score || 0) - (a.rank_score || 0) || new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime());
+    if (!articles?.length) return { featured: null, secondary: [], catGroups: {} as Record<string, NewsArticle[]>, allSorted: [] };
+    const sorted = [...articles].sort(
+      (a, b) => (b.rank_score || 0) - (a.rank_score || 0) ||
+        new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime()
+    );
     const safe = sorted.filter(a => a.original_title);
     const groups: Record<string, NewsArticle[]> = {};
-    safe.slice(5).forEach(a => { const c = a.category || 'General'; (groups[c] ??= []).push(a); });
-    return { featured: safe[0], secondary: safe.slice(1, 5), catGroups: groups, latest: safe.slice(16), allSorted: safe };
+    // FIX: Show ALL categories, not just first 5
+    safe.slice(5).forEach(a => {
+      const c = a.category || "General";
+      (groups[c] ??= []).push(a);
+    });
+    return { featured: safe[0], secondary: safe.slice(1, 5), catGroups: groups, allSorted: safe };
   }, [articles]);
 
-  if (isLoading) return (
-    <div className="max-w-7xl mx-auto px-4 space-y-8 animate-pulse">
-      <div className="h-[400px] bg-zinc-100 rounded-xl" />
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">{[1,2,3,4].map(i => <div key={i} className="space-y-3"><div className="h-44 bg-zinc-100 rounded-lg" /><div className="h-4 bg-zinc-100 w-3/4 rounded" /></div>)}</div>
-    </div>
-  );
+  if (isLoading && !articles?.length) return <SkeletonLayout />;
+
+  if (selectedCategory === "Surveys") {
+    return (
+      <div className="max-w-7xl mx-auto px-4 pb-16">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+          <div className="bg-[var(--pf-navy)] p-6 text-white flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-tight">Survey Reports & Results</h2>
+              <p className="text-white/70 text-sm mt-1">Structured data from community feedback and public polls.</p>
+            </div>
+            <div className="flex gap-2">
+              <div className="w-2 h-2 rounded-full bg-[var(--pf-saffron)]" />
+              <div className="w-2 h-2 rounded-full bg-white" />
+              <div className="w-2 h-2 rounded-full bg-[var(--pf-green)]" />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Date</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Topic / Survey Title</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Category</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Status</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {articles.map((a, i) => (
+                  <tr key={a.id} className="hover:bg-zinc-50 transition-colors group">
+                    <td className="px-6 py-4 text-xs font-bold text-zinc-400">
+                      {new Date(a.published_at!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Link href={`/news/${a.slug || a.id}`}>
+                        <span className="font-black text-zinc-800 group-hover:text-[var(--pf-saffron)] transition-colors cursor-pointer">
+                          {getTitle(a)}
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-zinc-100 text-[10px] font-black uppercase tracking-tighter text-zinc-500 rounded-sm">
+                        {a.category || "Survey"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="flex items-center gap-1.5 text-green-600 text-[10px] font-bold uppercase">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        Completed
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link href={`/news/${a.slug || a.id}`}>
+                        <button className="px-4 py-1.5 border border-[var(--pf-navy)] text-[var(--pf-navy)] text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all">
+                          View Results
+                        </button>
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedCategory === "Polls") {
+    return (
+      <div className="max-w-4xl mx-auto px-4 pb-16">
+        <div className="text-center mb-10">
+          <div className="tricolor-stripe rounded-full w-24 mx-auto mb-4" />
+          <h2 className="text-3xl md:text-5xl font-black uppercase tracking-tight text-zinc-900" style={{ fontFamily: 'var(--font-headline)' }}>
+            People's Voice Polls
+          </h2>
+          <p className="text-zinc-500 mt-3 font-medium">Shape the news with your opinion. Real-time community feedback.</p>
+        </div>
+        <PollWidget />
+      </div>
+    );
+  }
 
   if (!featured) return (
     <div className="text-center py-24 max-w-md mx-auto">
       <Newspaper className="w-14 h-14 text-zinc-200 mx-auto mb-4" />
       <h3 className="text-lg font-bold text-zinc-400 mb-1">No articles available</h3>
-      <p className="text-zinc-400 text-sm">Check back soon for the latest news.</p>
+      <p className="text-zinc-300 text-sm">Check back soon for the latest news.</p>
     </div>
   );
 
-  const tickerItems = allSorted.slice(0, 8);
+  const tickerItems = allSorted.slice(0, 10);
 
   return (
     <div className="max-w-7xl mx-auto px-4 pb-16">
-      {/* ── Breaking ticker — enhanced design ── */}
-      <div className="flex items-center bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] text-white h-10 mb-8 overflow-hidden rounded-xl shadow-lg">
-        <div className="bg-gradient-to-r from-[var(--pf-red)] to-[var(--pf-pink)] px-6 h-full flex items-center font-bold text-[11px] uppercase tracking-wider shrink-0 gap-2">
-          <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-white" /></span>
-          Breaking News
+      {/* ── Breaking News Ticker (Indian flag navy) ── */}
+      <div className="flex items-center bg-[var(--pf-navy)] text-white h-10 mb-8 overflow-hidden rounded-xl shadow-lg">
+        <div className="bg-[var(--pf-red)] px-5 h-full flex items-center font-bold text-[11px] uppercase tracking-wider shrink-0 gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+          </span>
+          Breaking
         </div>
         <div className="flex-1 overflow-hidden">
           <div className="flex animate-marquee whitespace-nowrap items-center">
             {[...tickerItems, ...tickerItems].map((a, i) => (
               <Link key={`${a.id}-${i}`} href={`/news/${a.slug || a.id}`}>
-                <span className="text-[12px] font-medium px-6 hover:text-transparent hover:bg-gradient-to-r hover:from-[var(--pf-orange)] hover:to-[var(--pf-pink)] hover:bg-clip-text cursor-pointer border-r border-white/20 transition-all duration-300">
+                <span className="text-[12px] font-medium px-5 hover:text-[var(--pf-saffron)] cursor-pointer border-r border-white/20 transition-colors">
                   {getTitle(a)}
                 </span>
               </Link>
@@ -247,86 +340,111 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
         </div>
       </div>
 
-      {/* ── Hero section with enhanced background ── */}
-      <section className="mb-12 relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-orange)]/5 via-transparent to-[var(--pf-purple)]/5 rounded-3xl"></div>
+      {/* ── Hero ── */}
+      <section className="mb-10">
         <HeroCard article={featured} />
       </section>
 
-      {/* ── Secondary grid — enhanced cards ── */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-        {secondary.map((a, index) => (
-          <motion.div
-            key={a.id}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <ArticleCard article={a} size="md" />
-          </motion.div>
-        ))}
-      </section>
-
-      {/* ── Category sections with enhanced design ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-        <div className="lg:col-span-3 space-y-16">
-          {Object.entries(catGroups).slice(0, 5).map(([cat, items], catIndex) => (
-            <motion.section
-              key={cat}
-              initial={{ opacity: 0, y: 30 }}
+      {/* ── Secondary grid ── */}
+      {secondary.length > 0 && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-14">
+          {secondary.map((a, i) => (
+            <motion.div
+              key={a.id}
+              initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: catIndex * 0.1 }}
-              className="relative"
+              transition={{ delay: i * 0.08 }}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-gray-50 to-transparent -z-10 rounded-2xl"></div>
-              <div className="flex items-center justify-between mb-8 p-6">
-                <div>
-                  <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-transparent bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] bg-clip-text" style={{ fontFamily: 'var(--font-headline)' }}>
+              <ArticleCard article={a} size="md" />
+            </motion.div>
+          ))}
+        </section>
+      )}
+
+      {/* ── Category sections + sidebar ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
+        {/* Category sections — FIX: ALL categories shown */}
+        <div className="lg:col-span-3 space-y-14">
+          {Object.entries(catGroups).map(([cat, items], idx) => (
+            <motion.section
+              key={cat}
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: idx * 0.05 }}
+            >
+              {/* Section header — Indian flag saffron/navy (not purple) */}
+              <div className="flex items-center justify-between mb-6 pb-3 border-b-2 border-[var(--pf-navy)]">
+                <div className="flex items-center gap-3">
+                  <div className="w-1 h-8 bg-[var(--pf-saffron)] rounded-full" />
+                  <h2
+                    className="text-2xl font-black uppercase tracking-tight text-[var(--pf-navy)]"
+                    style={{ fontFamily: "var(--font-headline)" }}
+                  >
                     {cat}
                   </h2>
-                  <p className="text-gray-600 text-sm mt-1">Latest stories and updates</p>
                 </div>
-                <Link href={`/news?category=${cat}`} className="group bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] text-white px-6 py-3 rounded-xl font-bold text-[11px] uppercase tracking-wider shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 flex items-center gap-2">
-                  See All
-                  <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform duration-300" />
+                <Link
+                  href={`/news?category=${cat}`}
+                  className="flex items-center gap-1.5 bg-[var(--pf-navy)] text-white px-5 py-2 rounded-lg font-bold text-[11px] uppercase tracking-wider hover:bg-[var(--pf-saffron)] transition-colors"
+                >
+                  See All <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 px-6 pb-6">
-                {items[0] && <div className="md:col-span-1"><ArticleCard article={items[0]} size="lg" /></div>}
-                <div className="md:col-span-2 space-y-0">
-                  {items.slice(1, 5).map((a, idx) => <RankedItem key={a.id} article={a} rank={idx + 1} />)}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {items[0] && (
+                  <div className="md:col-span-1">
+                    <ArticleCard article={items[0]} size="lg" />
+                  </div>
+                )}
+                <div className="md:col-span-2 divide-y divide-gray-100">
+                  {items.slice(1, 5).map((a, i) => (
+                    <RankedItem key={a.id} article={a} rank={i + 1} />
+                  ))}
                 </div>
               </div>
             </motion.section>
           ))}
 
+          {/* Load More */}
           {hasMore && (
-            <div className="flex justify-center pt-8">
-              <Button variant="outline" onClick={onLoadMore}
-                className="rounded-full px-10 h-11 border-zinc-300 text-zinc-700 font-bold text-sm hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-all">
-                {isLoadingMore ? "Loading..." : "Load More Headlines"}
-              </Button>
+            <div className="flex justify-center pt-6">
+              <button
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                className="px-10 py-3 border-2 border-[var(--pf-navy)] text-[var(--pf-navy)] font-black text-sm uppercase tracking-wider rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all disabled:opacity-50"
+              >
+                {isLoadingMore ? "Loading…" : "Load More Headlines"}
+              </button>
             </div>
           )}
         </div>
 
-        {/* ── Sidebar ── */}
+        {/* Sidebar */}
         <aside className="lg:col-span-1">
-          <div className="sticky top-20 space-y-8">
-            <div className="bg-zinc-50 rounded-xl p-5 border border-zinc-100">
-              <h3 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-zinc-900 mb-5 pb-3 border-b border-zinc-200">
+          <div className="sticky top-20 space-y-6">
+            {/* Most Read */}
+            <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+              <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--pf-navy)] mb-4 pb-3 border-b-2 border-[var(--pf-saffron)]">
                 <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" /> Most Read
               </h3>
-              {allSorted.slice(0, 6).map((a, i) => <RankedItem key={a.id} article={a} rank={i + 1} />)}
+              {allSorted.slice(0, 7).map((a, i) => (
+                <RankedItem key={a.id} article={a} rank={i + 1} />
+              ))}
             </div>
 
-            <div className="bg-gradient-to-br from-[var(--pf-orange)] to-orange-600 rounded-xl p-6 text-white">
-              <h4 className="font-black uppercase tracking-wider text-xs mb-2" style={{ fontFamily: 'var(--font-headline)' }}>Daily Brief</h4>
-              <p className="text-sm mb-4 opacity-90" style={{ fontFamily: 'var(--font-serif)' }}>The most important stories, every morning.</p>
-              <input className="w-full bg-white/15 border border-white/20 px-3 py-2 text-xs rounded-lg mb-2 placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-white/30" placeholder="Enter email" />
-              <button className="w-full bg-white text-[var(--pf-orange)] py-2 text-[11px] font-extrabold uppercase tracking-wider rounded-lg hover:bg-zinc-100 transition-colors">Subscribe</button>
+            {/* Newsletter */}
+            <div className="bg-[var(--pf-navy)] rounded-xl p-5 text-white">
+              <h4 className="font-black uppercase tracking-wider text-xs mb-2">Daily Brief</h4>
+              <p className="text-sm mb-4 text-white/80">Top stories delivered every morning.</p>
+              <input
+                className="w-full bg-white/10 border border-white/20 px-3 py-2 text-xs rounded-lg mb-2 placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[var(--pf-saffron)]/50 text-white"
+                placeholder="your@email.com"
+              />
+              <button className="w-full bg-[var(--pf-saffron)] text-white py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg hover:bg-[var(--pf-orange)] transition-colors">
+                Subscribe
+              </button>
             </div>
           </div>
         </aside>

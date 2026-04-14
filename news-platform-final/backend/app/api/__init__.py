@@ -5,6 +5,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.scheduler import router as scheduler_router
 from app.api.categories import router as categories_router
 from app.api.youtube import router as youtube_router
+from app.api.polls import router as polls_router
 
 all_routers = [
     auth_router,
@@ -14,4 +15,5 @@ all_routers = [
     scheduler_router,
     categories_router,
     youtube_router,
+    polls_router,
 ]

@@ -1,96 +1,86 @@
 version: "3.9"
 
-services:
-#   db:
-#     image: postgres:15
-#     environment:
-#       POSTGRES_DB: newsagg
-#       POSTGRES_USER: newsadmin
-#       POSTGRES_PASSWORD: newspass123
-#     ports:
-#       - "5432:5432"
-#     volumes:
-#       - pgdata:/var/lib/postgresql/data
-#       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
-#     healthcheck:
-#       test: ["CMD-SHELL", "pg_isready -U newsadmin -d newsagg"]
-#       interval: 5s
-#       timeout: 5s
-#       retries: 5
+x-env: &env
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://newsadmin:newspass123@host.docker.internal:5432/newsagg}
+  DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:-postgresql://newsadmin:newspass123@host.docker.internal:5432/newsagg}
+  REDIS_URL: redis://redis:6379/0
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_API_KEY_SECONDARY: ${GEMINI_API_KEY_SECONDARY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AWS_DB_HOST: ${AWS_DB_HOST:-}
+  AWS_DB_PORT: ${AWS_DB_PORT:-5432}
+  AWS_DB_NAME: ${AWS_DB_NAME:-news_db_fe}
+  AWS_DB_USER: ${AWS_DB_USER:-}
+  AWS_DB_PASSWORD: ${AWS_DB_PASSWORD:-}
+  FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN:-}
+  FB_PAGE_ID: ${FB_PAGE_ID:-}
+  SOCIAL_SITE_URL: ${SOCIAL_SITE_URL:-https://www.peoples-feedback.com}
+  SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+  SCHEDULE_SCRAPE_ENABLED: ${SCHEDULE_SCRAPE_ENABLED:-true}
+  SCHEDULE_AI_ENABLED: ${SCHEDULE_AI_ENABLED:-true}
+  SCHEDULE_RANKING_ENABLED: ${SCHEDULE_RANKING_ENABLED:-true}
+  SCHEDULE_AWS_SYNC_ENABLED: ${SCHEDULE_AWS_SYNC_ENABLED:-true}
+  SCHEDULE_SOCIAL_ENABLED: ${SCHEDULE_SOCIAL_ENABLED:-true}
 
+services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"
+    restart: unless-stopped
+    ports: ["6380:6379"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD","redis-cli","ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes: [redis_data:/data]
 
   backend:
     build: ./backend
-    ports:
-      - "8005:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      REDIS_URL: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    restart: unless-stopped
+    ports: ["8005:8000"]
+    environment: *env
     depends_on:
-      # db:
-      #   condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
+      redis: {condition: service_healthy}
+    volumes: [./backend:/app]
+    healthcheck:
+      test: ["CMD-SHELL","curl -sf http://localhost:8000/health||exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   celery_worker:
     build: ./backend
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      REDIS_URL: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 --max-tasks-per-child=50 -E
+    environment: *env
     depends_on:
-      # db:
-      #   condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
+      redis: {condition: service_healthy}
+      backend: {condition: service_healthy}
+    volumes: [./backend:/app]
 
   celery_beat:
     build: ./backend
-    command: celery -A app.tasks.celery_app beat --loglevel=info
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      DATABASE_URL_SYNC: postgresql://postgres:NewStrongPassword123@host.docker.internal:5432/news_db_fe
-      REDIS_URL: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule /tmp/celerybeat-schedule
+    environment: *env
     depends_on:
-      # db:
-      #   condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
+      redis: {condition: service_healthy}
+      backend: {condition: service_healthy}
+    volumes: [./backend:/app, beat_data:/tmp]
 
   frontend:
     build: ./frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    restart: unless-stopped
+    ports: ["3000:3000"]
     environment:
-      - REACT_APP_API_URL=http://127.0.0.1:8005
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://127.0.0.1:8005}
+    depends_on:
+      backend: {condition: service_healthy}
+    volumes: [./frontend:/app, /app/node_modules]
 
 volumes:
+  redis_data:
+  beat_data:
   pgdata:

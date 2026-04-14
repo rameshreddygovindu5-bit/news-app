@@ -1,120 +1,210 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Sans+Telugu:wght@400;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ══ Indian Flag Color System ══════════════════════════════════════════ */
 :root {
-  --pf-orange: #FF6B35;
-  --pf-saffron: #FF9933;
-  --pf-green: #00A86B;
-  --pf-navy: #1E3A5F;
-  --pf-dark: #0F172A;
-  --pf-red: #E74C3C;
-  --pf-gold: #FFD700;
-  --pf-blue: #3B82F6;
-  --pf-purple: #8B5CF6;
-  --pf-pink: #EC4899;
-  --pf-teal: #14B8A6;
-  --pf-indigo: #6366F1;
-  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Tricolor (EXACT Pantone values from Flag Code of India) */
+  --pf-saffron:  #FF9933;   /* India Saffron */
+  --pf-white:    #FFFFFF;   /* India White */
+  --pf-green:    #138808;   /* India Green */
+  --pf-navy:     #000080;   /* Ashoka Chakra Blue */
+
+  /* Extended palette — still India-inspired */
+  --pf-orange:   #E8621A;   /* Deep saffron variant */
+  --pf-dark:     #0A0F1E;   /* Near-black */
+  --pf-red:      #C62828;   /* Alert red */
+  --pf-gold:     #FFB300;   /* Gold accent */
+  --pf-teal:     #00695C;   /* Complementary green */
+  --pf-blue:     #1565C0;   /* Ashoka blue variant */
+  --pf-indigo:   #283593;   /* Deep indigo */
+
+  /* Alias pink/purple to saffron/navy for backward compat */
+  --pf-pink:     #E8621A;   /* mapped to saffron-orange */
+  --pf-purple:   #283593;   /* mapped to indigo */
+
+  /* Typography */
+  --font-display:  'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-headline: 'Playfair Display', Georgia, serif;
-  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-serif:    'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-telugu:   'Noto Sans Telugu', sans-serif;
 }
 
-body { font-family: var(--font-display); -webkit-font-smoothing: antialiased; color: #1a1a1a; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); }
-::selection { background: var(--pf-orange); color: white; }
+/* ══ Base ══════════════════════════════════════════════════════════════ */
+body {
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  color: #1a1a1a;
+  background: #f8f9fa;
+}
+::selection { background: var(--pf-saffron); color: white; }
 
-/* Enhanced background patterns */
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-image: 
-    radial-gradient(circle at 20% 80%, rgba(255, 107, 53, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(0, 168, 107, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(59, 130, 246, 0.02) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: -1;
+/* ══ Indian Flag tricolor stripe ═══════════════════════════════════════ */
+.tricolor-stripe {
+  height: 4px;
+  background: linear-gradient(90deg,
+    var(--pf-saffron) 0%,   var(--pf-saffron) 33.33%,
+    #fff             33.33%, #fff             66.66%,
+    var(--pf-green)  66.66%, var(--pf-green)  100%
+  );
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+.tricolor-stripe-bottom {
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--pf-green)  0%,   var(--pf-green)  33.33%,
+    #fff             33.33%, #fff             66.66%,
+    var(--pf-saffron) 66.66%, var(--pf-saffron) 100%
+  );
 }
 
-/* Premium article content — NYT-style readability */
-/* Premium article content — NYT-style readability */
-.article-content { 
-  font-family: var(--font-serif); 
-  font-size: 1.1rem; 
-  line-height: 1.8; 
-  color: #1a1a1a; 
+/* ══ Indian Navy / Tricolor UI ══════════════════════════════════════════ */
+.nav-india {
+  background: linear-gradient(135deg,
+    var(--pf-navy) 0%, #0d1575 40%, #1a237e 70%, var(--pf-navy) 100%
+  );
+}
+
+.nav-tricolor {
+  background: linear-gradient(90deg,
+    var(--pf-saffron) 0%,
+    var(--pf-white) 50%,
+    var(--pf-green) 100%
+  );
+}
+
+.text-tricolor {
+  background: linear-gradient(90deg, 
+    var(--pf-saffron) 0%, 
+    var(--pf-navy) 50%, 
+    var(--pf-green) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+/* ══ Saffron gradient text / bg ════════════════════════════════════════ */
+.text-india {
+  background: linear-gradient(90deg, var(--pf-saffron), var(--pf-orange));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.bg-tricolor-light {
+  background: 
+    linear-gradient(135deg, rgba(255, 153, 51, 0.03) 0%, transparent 25%),
+    linear-gradient(225deg, rgba(19, 136, 8, 0.03) 0%, transparent 25%),
+    #ffffff;
+  background-attachment: fixed;
+}
+
+/* ══ Article typography ════════════════════════════════════════════════ */
+.article-content {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  line-height: 1.9;
+  color: #111;
+}
+.article-content-telugu {
+  font-family: var(--font-telugu);
+  font-size: 1.2rem;
+  line-height: 2.1;
+  color: #111;
 }
 @media (min-width: 768px) {
-  .article-content {
-    font-size: 1.25rem;
-    line-height: 1.9;
-  }
+  .article-content       { font-size: 1.25rem; }
+  .article-content-telugu { font-size: 1.3rem; }
 }
-.article-content p { margin-bottom: 1.75rem; }
-.article-content b, .article-content strong { font-weight: 700; color: #000; }
-.article-content ul { margin: 1.5rem 0; padding-left: 1.5rem; }
-.article-content li { margin-bottom: 0.75rem; line-height: 1.7; }
-.article-content blockquote { border-left: 4px solid var(--pf-orange); padding: 1rem 1.5rem; margin: 2rem 0; background: #fef7f0; font-style: italic; }
+.article-content p,
+.article-content-telugu p   { margin-bottom: 1.75rem; }
+.article-content ul,
+.article-content-telugu ul  { margin: 1.5rem 0; padding-left: 1.5rem; }
+.article-content li,
+.article-content-telugu li  { margin-bottom: 0.7rem; line-height: 1.7; }
+.article-content blockquote {
+  border-left: 4px solid var(--pf-saffron);
+  padding: 1rem 1.5rem;
+  margin: 2rem 0;
+  background: #fff8f0;
+  font-style: italic;
+  border-radius: 0 8px 8px 0;
+}
+.article-content b,
+.article-content strong,
+.article-content-telugu b,
+.article-content-telugu strong { font-weight: 700; color: #000; }
+.article-content a {
+  color: var(--pf-navy);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.article-content img {
+  width: 100%; max-width: 100%; height: auto;
+  border-radius: 6px; margin: 1.5rem 0;
+}
 
-/* Marquee */
-@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-.animate-marquee { animation: marquee 40s linear infinite; }
+/* ══ Telugu base class ════════════════════════════════════════════════ */
+.telugu { font-family: var(--font-telugu) !important; }
+
+/* ══ Reading progress ═════════════════════════════════════════════════ */
+.reading-progress {
+  position: fixed; top: 0; left: 0; z-index: 9999;
+  height: 3px;
+  background: linear-gradient(90deg, var(--pf-saffron), var(--pf-green));
+  transform-origin: 0%;
+}
+
+/* ══ Skeleton loading ════════════════════════════════════════════════ */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* ══ Breaking news ticker ════════════════════════════════════════════ */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee { animation: marquee 45s linear infinite; }
 .animate-marquee:hover { animation-play-state: paused; }
 
-/* Scrollbar */
+/* ══ Scrollbar hide ══════════════════════════════════════════════════ */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Tricolor */
-.tricolor-stripe { height: 3px; background: linear-gradient(90deg, #FF9933 33%, #fff 33%, #fff 66%, #138808 66%); }
-
-/* Google Translate cleanup */
+/* ══ Google Translate cleanup ═════════════════════════════════════════ */
 .goog-te-banner-frame, .skiptranslate { display: none !important; }
 body { top: 0 !important; }
 
-/* Premium hover effects */
-.card-hover { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
-
-/* Section dividers — WashPost style */
-.section-rule { border-top: 3px double #1a1a1a; padding-top: 1.5rem; margin-top: 3rem; }
-
-/* ── Image error handling — show placeholder for broken images ── */
-img[src=""], img:not([src]) { 
-  visibility: hidden; 
+/* ══ Card hover ══════════════════════════════════════════════════════ */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-img { 
-  object-fit: cover; 
-  background-color: #f1f5f9; 
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px rgba(0,0,0,.10);
 }
 
-/* ── Better article image styling ── */
-.article-content img {
-  width: 100%;
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-  margin: 1.5rem 0;
-}
+/* ══ Image fallback ══════════════════════════════════════════════════ */
+img[src=""], img:not([src]) { visibility: hidden; }
+img { object-fit: cover; background-color: #f1f5f9; }
 
-/* ── Smooth page transitions ── */
-main { animation: fadeIn 0.3s ease-in; }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-/* ── Better focus states for accessibility ── */
-a:focus-visible, button:focus-visible {
-  outline: 2px solid var(--pf-orange);
-  outline-offset: 2px;
-  border-radius: 2px;
+/* ══ Back-to-top button ══════════════════════════════════════════════ */
+.back-to-top {
+  position: fixed; bottom: 28px; right: 24px; z-index: 999;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--pf-saffron), var(--pf-orange));
+  color: white; border: none; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(232,98,26,.4);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s ease;
 }
-
-/* ── Print styles ── */
-@media print {
-  header, footer, .no-print { display: none !important; }
-  .article-content { font-size: 12pt; line-height: 1.6; }
-}
+.back-to-top:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(232,98,26,.5); }

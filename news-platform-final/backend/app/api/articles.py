@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, desc
 
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.models.models import NewsArticle, NewsSource, AdminUser
 from app.schemas.schemas import (
     NewsArticleResponse, NewsArticleUpdate, NewsArticleListResponse,
@@ -28,35 +28,38 @@ def _make_slug(title: str) -> str:
     return s[:200] if s else None
 
 
-async def _run_ai_and_rank(article_id: int, db: AsyncSession):
+async def _run_ai_and_rank(article_id: int):
     """Run AI rephrase + auto-rank in background after manual/submit/youtube save."""
     import asyncio
-    try:
-        from app.services.ai_service import ai_service
-        art = (await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))).scalar_one_or_none()
-        if not art:
-            return
-        # AI process
-        result = await asyncio.to_thread(
-            ai_service.process_article,
-            art.original_title, art.original_content or ""
-        )
-        art.rephrased_title = result["rephrased_title"]
-        art.rephrased_content = result["rephrased_content"]
-        art.translated_title = result.get("translated_title", art.original_title)
-        art.translated_content = result.get("translated_content", art.original_content)
-        art.category = result["category"]
-        art.slug = result.get("slug") or _make_slug(result["rephrased_title"])
-        art.tags = result.get("tags", [])
-        art.ai_status = "completed"
-        art.processed_at = datetime.now(timezone.utc)
-        # Auto-rank: set flag=Y so it appears in top news and client UI
-        art.flag = "Y"
-        art.rank_score = 500  # High initial score for manual/submitted articles
-        await db.commit()
-        logger.info(f"[AUTO-AI] Article {article_id} processed + ranked (Y)")
-    except Exception as e:
-        logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
+    async with AsyncSessionLocal() as db:
+        try:
+            from app.services.ai_service import ai_service
+            art = (await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))).scalar_one_or_none()
+            if not art:
+                return
+            # AI process
+            result = await asyncio.to_thread(
+                ai_service.process_article,
+                art.original_title, art.original_content or ""
+            )
+            art.rephrased_title = result["rephrased_title"]
+            art.rephrased_content = result["rephrased_content"]
+            art.telugu_title = result.get("telugu_title", "")
+            art.telugu_content = result.get("telugu_content", "")
+            art.translated_title = result.get("translated_title", art.original_title)
+            art.translated_content = result.get("translated_content", art.original_content)
+            art.category = result["category"]
+            art.slug = result.get("slug") or _make_slug(result["rephrased_title"])
+            art.tags = result.get("tags", [])
+            art.ai_status = "completed"
+            art.processed_at = datetime.now(timezone.utc)
+            # Auto-rank: set flag=Y so it appears in top news and client UI
+            art.flag = "Y"
+            art.rank_score = 500  # High initial score for manual/submitted articles
+            await db.commit()
+            logger.info(f"[AUTO-AI] Article {article_id} processed + ranked (Y)")
+        except Exception as e:
+            logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
 
 router = APIRouter(prefix="/api/articles", tags=["News Articles"])
 
@@ -77,6 +80,7 @@ def article_to_response(article, source_name: str = None) -> dict:
         "published_at": article.published_at,
         "translated_title": article.translated_title, "translated_content": article.translated_content,
         "rephrased_title": article.rephrased_title, "rephrased_content": article.rephrased_content,
+        "telugu_title": article.telugu_title, "telugu_content": article.telugu_content,
         "category": article.category, "slug": article.slug, "tags": article.tags or [],
         "content_hash": article.content_hash, "is_duplicate": article.is_duplicate,
         "flag": article.flag, "rank_score": article.rank_score or 0,
@@ -94,7 +98,8 @@ async def list_articles(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = None, category: Optional[str] = None,
     source_id: Optional[int] = None, flag: Optional[str] = None,
-    flags: Optional[str] = None,
+    flags: Optional[str] = None, has_telugu: Optional[str] = None,
+    telugu_page: Optional[bool] = Query(None),
     date_from: Optional[str] = None, date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -106,8 +111,12 @@ async def list_articles(
     filters = [NewsArticle.is_duplicate == False]
     if keyword:
         kw = f"%{keyword}%"
-        filters.append(or_(NewsArticle.original_title.ilike(kw), NewsArticle.rephrased_title.ilike(kw),
-                           NewsArticle.original_content.ilike(kw), NewsArticle.rephrased_content.ilike(kw)))
+        filters.append(or_(
+            NewsArticle.original_title.ilike(kw), NewsArticle.rephrased_title.ilike(kw),
+            NewsArticle.telugu_title.ilike(kw),
+            NewsArticle.original_content.ilike(kw), NewsArticle.rephrased_content.ilike(kw),
+            NewsArticle.telugu_content.ilike(kw)
+        ))
     if category: filters.append(NewsArticle.category == category)
     if source_id: filters.append(NewsArticle.source_id == source_id)
     if flags:
@@ -115,6 +124,22 @@ async def list_articles(
         filters.append(NewsArticle.flag.in_(flag_list))
     elif flag:
         filters.append(NewsArticle.flag == flag)
+    if has_telugu == 'true':
+        filters.append(NewsArticle.telugu_title != None)
+        filters.append(NewsArticle.telugu_title != '')
+    if telugu_page:
+        regional_kw = or_(
+            NewsArticle.original_title.ilike('%Andhra%'),
+            NewsArticle.original_title.ilike('%Telangana%'),
+            NewsArticle.rephrased_title.ilike('%Andhra%'),
+            NewsArticle.rephrased_title.ilike('%Telangana%'),
+            NewsArticle.original_content.ilike('%Andhra%'),
+            NewsArticle.original_content.ilike('%Telangana%')
+        )
+        filters.append(or_(
+            and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
+            regional_kw
+        ))
     if date_from: filters.append(NewsArticle.created_at >= date_from)
     if date_to: filters.append(NewsArticle.created_at <= date_to)
     if filters:
@@ -257,16 +282,29 @@ async def submit_article(
     content_hash = hashlib.sha256(f"{data.title}|{user.username}|{datetime.now().isoformat()}".encode()).hexdigest()
 
     source_id = data.source_id
-    source_name = "Manual"
-    if source_id:
+    source_name = "Peoples Feedback"
+    
+    # End-to-end: Ensure Peoples Feedback is the default source
+    pf_source = (await db.execute(select(NewsSource).where(
+        or_(NewsSource.name.ilike("Peoples Feedback"), NewsSource.name.ilike("PeoplesFeedback"))
+    ))).scalar_one_or_none()
+    
+    if not source_id and pf_source:
+        source_id = pf_source.id
+        source_name = pf_source.name
+    elif source_id:
         source = (await db.execute(select(NewsSource).where(NewsSource.id == source_id))).scalar_one_or_none()
         if source: source_name = source.name
-    else:
+    
+    if not source_id:
+        # Fallback to first available if PF not found
         source = (await db.execute(select(NewsSource).limit(1))).scalar_one_or_none()
-        if source: source_id = source.id
+        if source: 
+            source_id = source.id
+            source_name = source.name
         else: raise HTTPException(status_code=400, detail="No news sources available")
 
-    is_pf = source_name.lower().strip() == "peoples feedback"
+    is_pf = source_name.lower().strip() in ["peoples feedback", "peoplesfeedback"]
     is_admin = user.role == "admin"
 
     # Flag logic: Reporter â†’ P (pending), Admin PF â†’ Y, Admin other â†’ A
@@ -295,7 +333,7 @@ async def submit_article(
     # Run AI processing + auto-rank in background for admin submissions
     if target_flag != "P":
         import asyncio
-        asyncio.create_task(_run_ai_and_rank(article.id, db))
+        asyncio.create_task(_run_ai_and_rank(article.id))
         # Trigger AWS sync after a small delay
         from app.tasks.celery_app import sync_to_aws
         try:
@@ -374,16 +412,26 @@ async def create_manual_article(
     """Admin creates article directly (bypasses approval)."""
     content_hash = hashlib.sha256(f"{data.title}|manual|{datetime.now().isoformat()}".encode()).hexdigest()
     source_id = data.source_id
-    source_name = "Manual"
+    source_name = "Peoples Feedback"
+    
+    # End-to-end: Ensure Peoples Feedback is the default source
+    pf_source = (await db.execute(select(NewsSource).where(
+        or_(NewsSource.name.ilike("Peoples Feedback"), NewsSource.name.ilike("PeoplesFeedback"))
+    ))).scalar_one_or_none()
+    
+    if not source_id and pf_source:
+        source_id = pf_source.id
+        source_name = pf_source.name
+    elif source_id:
+        source = (await db.execute(select(NewsSource).where(NewsSource.id == source_id))).scalar_one_or_none()
+        if source: source_name = source.name
+        
     if not source_id:
         source = (await db.execute(select(NewsSource).limit(1))).scalar_one_or_none()
         if source: source_id = source.id; source_name = source.name
         else: raise HTTPException(status_code=400, detail="No sources available")
-    else:
-        source = (await db.execute(select(NewsSource).where(NewsSource.id == source_id))).scalar_one_or_none()
-        if source: source_name = source.name
 
-    is_pf = source_name.lower().strip() == "peoples feedback"
+    is_pf = source_name.lower().strip() in ["peoples feedback", "peoplesfeedback"]
     target_flag = "Y" if is_pf else "A"
 
     article = NewsArticle(
@@ -404,7 +452,7 @@ async def create_manual_article(
     await db.refresh(article)
     # Run AI processing + auto-rank in background
     import asyncio
-    asyncio.create_task(_run_ai_and_rank(article.id, db))
+    asyncio.create_task(_run_ai_and_rank(article.id))
     
     # Trigger AWS sync after AI completes
     from app.tasks.celery_app import sync_to_aws

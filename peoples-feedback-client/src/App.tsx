@@ -7,6 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
 import News from "@/pages/News";
 import NewsDetail from "@/pages/NewsDetail";
+import Telugu from "@/pages/Telugu";
+import TeluguDetail from "@/pages/TeluguDetail";
 import NotFound from "@/pages/NotFound";
 
 function Router() {
@@ -15,6 +17,8 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/news" component={News} />
       <Route path="/news/:idOrSlug" component={NewsDetail} />
+      <Route path="/telugu" component={Telugu} />
+      <Route path="/telugu/:idOrSlug" component={TeluguDetail} />
       <Route component={NotFound} />
     </Switch>
   );

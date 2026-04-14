@@ -20,13 +20,13 @@ settings = get_settings()
 
 @router.get("/logs", response_model=List[SchedulerLogResponse])
 async def get_scheduler_logs(
-    job_type: Optional[str] = None,
+    job_name: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(SchedulerLog).order_by(desc(SchedulerLog.started_at)).limit(limit)
-    if job_type:
-        query = query.where(SchedulerLog.job_type == job_type)
+    if job_name:
+        query = query.where(SchedulerLog.job_name == job_name)
     result = await db.execute(query)
     return result.scalars().all()
 

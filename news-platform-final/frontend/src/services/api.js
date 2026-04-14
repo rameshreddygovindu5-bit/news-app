@@ -78,6 +78,10 @@ export const updateSchedulerConfig = (data) => api.put('/api/scheduler/config', 
 export const processYouTube = (url, sourceId) => api.post('/api/youtube/process', { url, source_id: sourceId });
 export const saveYouTubeArticle = (data) => api.post('/api/youtube/save', data);
 
+// Polls
+export const getPolls = () => api.get('/api/polls');
+export const createPoll = (data) => api.post('/api/polls', data);
+
 // Social & AWS Status
 export const getSocialStatus = () => api.get('/api/scheduler/social-status');
 

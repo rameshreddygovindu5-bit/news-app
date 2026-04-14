@@ -26,8 +26,8 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     staleTime: 10 * 60 * 1000,
   });
 
-  const navCategories = apiCategories && apiCategories.length > 0
-    ? ['Home', ...apiCategories.map(c => c.name)]
+  const baseCategories = apiCategories && apiCategories.length > 0
+    ? ['Home', ...apiCategories.filter(c => c.name !== 'Home').map(c => c.name)]
     : [...DEFAULT_CATEGORIES];
 
   useEffect(() => {
@@ -59,6 +59,15 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const currentDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
   const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }, { name: 'हिन्दी', code: 'hi' }];
 
+  // Auto-cleanup for Telugu translation stickiness
+  useEffect(() => {
+    if (!location.startsWith('/telugu') && document.cookie.includes('googtrans=/en/te')) {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      window.location.reload();
+    }
+  }, [location]);
+
   const switchLang = (code: string) => {
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
@@ -70,12 +79,12 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   };
 
   const handleCat = (cat: string) => {
-    const id = cat === 'Home' ? '' : cat;
-    onCategoryChange?.(id || 'All');
-    if (id) setLocation(`/news?category=${id}`);
-    else setLocation('/');
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (cat === 'తెలుగు వార్తలు') { setLocation('/telugu'); return; }
+    const id = cat === 'Home' ? '' : cat;
+    onCategoryChange?.(id || 'All');
+    if (id) setLocation(`/news?category=${id}`); else setLocation('/');
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -83,13 +92,35 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     if (searchQuery?.trim()) setLocation(`/news?search=${encodeURIComponent(searchQuery.trim())}`);
   };
 
+  // ── Hierarchical Menu Structure ──
+  const menuConfig = [
+    { name: 'Home', path: 'Home' },
+    {
+      name: 'Politics & World',
+      items: ['Politics', 'World', 'Events']
+    },
+    {
+      name: 'Business & Tech',
+      items: ['Business', 'Tech', 'Science', 'Sports']
+    },
+    {
+      name: 'Lifestyle',
+      items: ['Entertainment', 'Health']
+    },
+    {
+      name: 'Insights & Polls',
+      items: ['Surveys', 'Polls']
+    },
+    { name: 'తెలుగు వార్తలు', path: 'తెలుగు వార్తలు', isSpecial: true }
+  ];
+
   return (
-    <header className="flex flex-col w-full z-50">
+    <header className="flex flex-col w-full z-50 notranslate">
       {/* ── Tricolor stripe ── */}
       <div className="tricolor-stripe" />
 
       {/* ── Top utility bar — vibrant gradient ── */}
-      <div className="bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] text-white h-12 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg relative overflow-hidden">
+      <div className="nav-india text-white h-12 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg relative overflow-hidden">
         {/* Animated background element */}
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
         
@@ -118,16 +149,6 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
         </div>
 
         <div className="flex items-center gap-8 relative z-10">
-          <div className="hidden lg:flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors cursor-pointer">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span className="font-bold uppercase tracking-tighter">Election 2024</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors cursor-pointer">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span className="font-bold uppercase tracking-tighter">Tech Summit</span>
-            </span>
-          </div>
 
           <div id="google_translate_element" className="hidden" />
           <span className="text-white/90 font-bold italic tracking-wider flex items-center gap-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
@@ -152,7 +173,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                     <div className="absolute -inset-1 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] rounded-full opacity-0 group-hover:opacity-20 blur-lg transition-opacity duration-300"></div>
                   </div>
                   <div className="flex flex-col items-center md:items-start min-w-0">
-                    <h1 className="text-xl sm:text-2xl md:text-5xl font-black tracking-tight bg-gradient-to-r from-[var(--pf-navy)] via-[var(--pf-blue)] to-[var(--pf-purple)] bg-clip-text text-transparent leading-none group-hover:scale-105 transition-transform duration-300 truncate md:whitespace-normal" style={{ fontFamily: 'var(--font-headline)' }}>
+                    <h1 className="text-xl sm:text-2xl md:text-5xl font-black tracking-tight text-tricolor transition-transform duration-300 truncate md:whitespace-normal" style={{ fontFamily: 'var(--font-headline)' }}>
                       Peoples Feedback
                     </h1>
                     <div className="flex items-center gap-2 md:gap-3 mt-1.5 md:mt-2">
@@ -182,27 +203,58 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
         </div>
       </div>
 
-      {/* ── Category nav — enhanced modern navigation ── */}
+      {/* ── Category nav — Hierarchical Dropdown ── */}
       <motion.div className={`w-full z-40 transition-all duration-300 ${scrolled ? 'fixed top-0 bg-white/95 backdrop-blur-md shadow-xl border-b border-gray-100' : 'relative bg-gradient-to-r from-white via-gray-50 to-white border-b border-gray-200'}`}>
         <div className="max-w-7xl mx-auto px-4 flex items-center h-12">
-          <nav className="flex-1 flex items-center gap-0 overflow-x-auto no-scrollbar">
-            {navCategories.map(cat => {
-              const isActive = (cat === 'Home' && (!selectedCategory || selectedCategory === 'All')) || selectedCategory === cat;
+          <nav className="flex-1 flex items-center gap-2">
+            {menuConfig.map((main) => {
+              const isDirect = !!main.path;
+              const isActiveMain = isDirect && (
+                (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All')) ||
+                selectedCategory === main.path ||
+                (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
+              );
+              const hasActiveChild = !isDirect && main.items?.some(sub => selectedCategory === sub);
+
               return (
-                <button key={cat} onClick={() => handleCat(cat)}
-                  className={`relative px-5 text-[13px] font-bold uppercase tracking-[0.05em] h-12 flex items-center transition-all duration-300 whitespace-nowrap border-b-3 group
-                    ${isActive 
-                      ? 'text-transparent bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] bg-clip-text border-[var(--pf-orange)] shadow-lg transform scale-105' 
-                      : 'text-gray-600 border-transparent hover:text-[var(--pf-navy)] hover:border-gray-300 hover:transform hover:scale-105'}`}>
-                  {cat}
-                  {isActive && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-orange)]/10 to-[var(--pf-pink)]/10 rounded-lg -z-10"></div>
+                <div key={main.name} className="relative group/menu h-12 flex items-center">
+                  <button
+                    onClick={() => isDirect ? handleCat(main.path!) : null}
+                    className={`px-4 text-[13px] font-black h-12 flex items-center transition-all duration-300 whitespace-nowrap uppercase tracking-wider
+                      ${(isActiveMain || hasActiveChild) 
+                        ? 'text-transparent bg-gradient-to-r from-[var(--pf-navy)] to-[var(--pf-blue)] bg-clip-text border-b-2 border-[var(--pf-navy)] shadow-sm' 
+                        : 'text-zinc-600 hover:text-[var(--pf-navy)]'}
+                      ${main.isSpecial ? 'telugu !font-bold !tracking-normal !normal-case !text-[15px]' : ''}`}
+                  >
+                    {main.name}
+                    {!isDirect && <span className="ml-1 opacity-50 group-hover/menu:rotate-180 transition-transform text-[8px]">▼</span>}
+                  </button>
+
+                  {/* Dropdown for submenus */}
+                  {!isDirect && (
+                    <div className="absolute top-12 left-0 w-48 bg-white shadow-2xl border border-gray-100 rounded-b-xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all duration-200 transform translate-y-2 group-hover/menu:translate-y-0 z-50 overflow-hidden">
+                      <div className="p-2 space-y-1">
+                        {main.items?.map(sub => (
+                          <button
+                            key={sub}
+                            onClick={() => handleCat(sub)}
+                            className={`w-full text-left px-4 py-2.5 text-[12px] font-bold rounded-lg transition-all
+                              ${selectedCategory === sub 
+                                ? 'bg-[var(--pf-navy)]/5 text-[var(--pf-navy)]' 
+                                : 'text-zinc-500 hover:bg-zinc-50 hover:text-[var(--pf-navy)]'}`}
+                          >
+                            {sub}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="h-1 w-full bg-gradient-to-r from-[var(--pf-saffron)] via-[var(--pf-navy)] to-[var(--pf-green)] opacity-20" />
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </nav>
-          <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold text-transparent bg-gradient-to-r from-[var(--pf-red)] to-[var(--pf-pink)] bg-clip-text uppercase tracking-wider pl-6 border-l-2 border-gray-200">
+          <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold text-transparent bg-gradient-to-r from-[var(--pf-red)] to-[var(--pf-saffron)] bg-clip-text uppercase tracking-wider pl-6 border-l-2 border-gray-200">
             <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" />
             <span>Trending</span>
           </div>
@@ -217,7 +269,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
               <div className="flex items-center gap-3">
                 <img src="/pf-logo.png" alt="PF" className="h-10 drop-shadow-lg" />
                 <div>
-                  <h2 className="text-lg font-black text-transparent bg-gradient-to-r from-[var(--pf-navy)] to-[var(--pf-purple)] bg-clip-text">Peoples Feedback</h2>
+                  <h2 className="text-lg font-black text-tricolor">Peoples Feedback</h2>
                   <p className="text-[10px] text-gray-500 uppercase tracking-wider">Empowering Every Voice</p>
                 </div>
               </div>
@@ -227,17 +279,45 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-2">
-                {navCategories.map(cat => {
-                  const isActive = (cat === 'Home' && (!selectedCategory || selectedCategory === 'All')) || selectedCategory === cat;
+                {menuConfig.map((main) => {
+                  const isDirect = !!main.path;
+                  const isActiveMain = isDirect && (
+                    (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All')) ||
+                    selectedCategory === main.path ||
+                    (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
+                  );
+
                   return (
-                    <button key={cat} onClick={() => handleCat(cat)}
-                      className={`w-full text-left text-lg font-bold transition-all duration-300 flex items-center group py-4 px-4 rounded-xl border-2
-                        ${isActive 
-                          ? 'text-white bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)] border-transparent shadow-lg transform scale-105' 
-                          : 'text-gray-700 border-gray-200 hover:border-[var(--pf-orange)] hover:text-[var(--pf-orange)] hover:shadow-md hover:transform hover:scale-102'}`}>
-                      <span className="flex-1">{cat}</span>
-                      <ArrowRight className={`h-5 w-5 transition-all duration-300 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-[var(--pf-orange)] opacity-0 group-hover:opacity-100'}`} />
-                    </button>
+                    <div key={main.name} className="space-y-1">
+                      <button 
+                        onClick={() => isDirect ? handleCat(main.path!) : null}
+                        className={`w-full text-left text-lg font-black transition-all duration-300 flex items-center py-4 px-4 rounded-xl border-2
+                          ${isActiveMain 
+                            ? 'text-white bg-[var(--pf-navy)] border-[var(--pf-saffron)] shadow-lg' 
+                            : 'text-zinc-800 border-zinc-100 bg-zinc-50/50'}
+                          ${main.isSpecial ? 'telugu !font-bold' : ''}`}>
+                        <span className="flex-1">{main.name}</span>
+                        {!isDirect && <span className="text-[10px] opacity-30">▼</span>}
+                        {isDirect && <ArrowRight className={`h-5 w-5 ${isActiveMain ? 'text-white' : 'text-zinc-300'}`} />}
+                      </button>
+                      
+                      {!isDirect && (
+                        <div className="grid grid-cols-2 gap-2 pl-2 pb-2">
+                          {main.items?.map(sub => (
+                            <button
+                              key={sub}
+                              onClick={() => handleCat(sub)}
+                              className={`text-left px-4 py-3 text-sm font-bold rounded-lg transition-all border
+                                ${selectedCategory === sub 
+                                  ? 'bg-[var(--pf-saffron)] text-white border-[var(--pf-saffron)] shadow-md' 
+                                  : 'bg-white text-zinc-500 border-zinc-100 hover:border-[var(--pf-saffron)]'}`}
+                            >
+                              {sub}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
