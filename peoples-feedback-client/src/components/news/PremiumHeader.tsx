@@ -17,6 +17,8 @@ interface Props {
 export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery, onSearchChange }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState("");
   const [, setLocation] = useLocation();
   const [location] = useLocation();
 
@@ -93,6 +95,15 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery?.trim()) setLocation(`/news?search=${encodeURIComponent(searchQuery.trim())}`);
+  };
+
+  const handleMobileSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mobileSearchQuery?.trim()) {
+      setLocation(`/news?search=${encodeURIComponent(mobileSearchQuery.trim())}`);
+      setMobileSearchOpen(false);
+      setMobileSearchQuery("");
+    }
   };
 
   // FIX 5: Build menu config dynamically from active categories only
@@ -183,7 +194,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           </div>
           {/* Mobile search icon */}
           <div className="md:hidden">
-            <Button variant="ghost" size="icon" onClick={() => { /* handled via mobile drawer search */ }} className="text-gray-700">
+            <Button variant="ghost" size="icon" onClick={() => setMobileSearchOpen(true)} className="text-gray-700">
               <Search className="h-5 w-5" />
             </Button>
           </div>
@@ -335,6 +346,46 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                 })}
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Search Overlay */}
+      <AnimatePresence>
+        {mobileSearchOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 md:hidden"
+          >
+            <div className="absolute inset-0 bg-black/50" onClick={() => setMobileSearchOpen(false)} />
+            <motion.div
+              initial={{ y: -100 }}
+              animate={{ y: 0 }}
+              exit={{ y: -100 }}
+              className="relative bg-white border-b border-gray-200 shadow-lg"
+            >
+              <div className="max-w-7xl mx-auto px-4 py-4">
+                <div className="flex items-center gap-3">
+                  <Button variant="ghost" size="icon" onClick={() => setMobileSearchOpen(false)} className="text-gray-600">
+                    <X className="h-5 w-5" />
+                  </Button>
+                  <form onSubmit={handleMobileSearchSubmit} className="flex-1 relative">
+                    <input 
+                      className="w-full pl-4 pr-12 py-3 bg-gray-50 border-2 border-gray-200 text-gray-900 rounded-xl focus:bg-white focus:ring-2 focus:ring-[var(--pf-orange)]/30 focus:border-[var(--pf-orange)] outline-none transition-all" 
+                      placeholder="Search news..." 
+                      value={mobileSearchQuery}
+                      onChange={e => setMobileSearchQuery(e.target.value)}
+                      autoFocus
+                    />
+                    <button type="submit" className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[var(--pf-orange)] transition-colors">
+                      <Search className="h-5 w-5" />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
