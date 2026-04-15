@@ -6,6 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="committed v2 changes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

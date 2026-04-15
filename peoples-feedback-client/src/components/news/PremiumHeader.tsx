@@ -30,9 +30,9 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
 
   // FIX 5: Filter out categories that have zero articles (hide empty menus)
   const activeCategories = useMemo(() => {
-    if (!apiCategories || apiCategories.length === 0) return [...DEFAULT_CATEGORIES];
+    if (!apiCategories || apiCategories.length === 0) return ['Home'];
     const withArticles = apiCategories.filter(c => c.article_count > 0 || c.name === 'Home');
-    if (withArticles.length === 0) return [...DEFAULT_CATEGORIES];
+    if (withArticles.length === 0) return ['Home'];
     return ['Home', ...withArticles.filter(c => c.name !== 'Home').map(c => c.name)];
   }, [apiCategories]);
 
