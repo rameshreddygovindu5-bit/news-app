@@ -97,7 +97,7 @@ def cmd_status():
         cats    = db.execute(select(func.count(Category.id))).scalar() or 0
         last    = db.execute(select(JobExecutionLog).order_by(JobExecutionLog.started_at.desc()).limit(1)).scalar_one_or_none()
 
-        bar = "─" * 48
+        bar = "-" * 48
         print(f"\n{bar}")
         print(f"  {'Articles total':<22}: {total:,}")
         print(f"  {'Top News (Y)':<22}: {top}")

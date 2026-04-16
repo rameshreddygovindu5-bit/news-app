@@ -31,7 +31,7 @@ export default function Home() {
     queryFn: ({ pageParam = 1 }) =>
       newsApi.getArticles({
         page:      pageParam as number,
-        page_size: 30,
+        page_size: 50,
         category:  cat === "All" ? undefined : cat,
         keyword:   debouncedSearch || undefined,
       }),

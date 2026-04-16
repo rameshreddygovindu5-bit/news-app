@@ -67,6 +67,8 @@ const IC = {
   TE:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><text x="3" y="18" fontSize="14" fontWeight="bold" fill="currentColor" stroke="none">తె</text></svg>,
   AWS:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 17L12 21L20 17"/><path d="M4 12L12 16L20 12"/><path d="M4 7L12 11L20 7L12 3L4 7z"/></svg>,
   Social:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>,
+  Gift:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>,
+  Upload:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
 };
 
 function FlagBadge({flag}) {
@@ -106,7 +108,7 @@ function Sidebar({onLogout}) {
     {p:'/pending',l:'Pending Approval',i:IC.Check},{p:'/sources',l:'Sources',i:IC.Globe},
     {p:'/top-news',l:'Top 100 News',i:IC.Star},{p:'/categories',l:'Categories',i:IC.List},
     {p:'/youtube',l:'YouTube Import',i:IC.YT},{p:'/scheduler',l:'Scheduler',i:IC.Clock},
-    {p:'/users',l:'Users',i:IC.Users},{p:'/polls',l:'Polls',i:IC.List},{p:'/surveys',l:'Surveys',i:IC.List},{p:'/settings',l:'Settings',i:IC.Gear},
+    {p:'/users',l:'Users',i:IC.Users},{p:'/polls',l:'Polls',i:IC.List},{p:'/surveys',l:'Surveys',i:IC.List},{p:'/wishes',l:'Wishes',i:IC.Gift},{p:'/settings',l:'Settings',i:IC.Gear},
   ];
   const reporterNav = [
     {p:'/',l:'Submit Article',i:IC.Send},{p:'/my-submissions',l:'My Submissions',i:IC.Doc},
@@ -807,6 +809,20 @@ function ReporterSubmitPage() {
   const pf = sources.find(s => s.name.toLowerCase() === 'peoples feedback' || s.name.toLowerCase() === 'peoplesfeedback');
   const [f,setF]=useState({title:'',content:'',category:'Home',tags:'',source_id:'',image_url:''});
   const [sv,setSv]=useState(false);const toast=useToast();
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleImgUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const r = await api.uploadImage(file);
+      setF(prev => ({ ...prev, image_url: r.data.url }));
+      toast.show('Image uploaded!');
+    } catch(err) { toast.show('Upload failed: ' + (err.response?.data?.detail || err.message), 'error'); }
+    setUploading(false);
+  };
   
   useEffect(() => {
     if (pf && !f.source_id) setF(prev => ({ ...prev, source_id: pf.id }));
@@ -828,7 +844,16 @@ function ReporterSubmitPage() {
           <div className="form-group"><label>Source</label><select className="form-select" value={f.source_id} disabled><option value={f.source_id}>{pf?.name || 'Peoples Feedback'}</option></select></div>
         </div>
         <div className="grid-2">
-          <div className="form-group"><label>Image URL</label><input className="form-input" value={f.image_url} onChange={e=>setF({...f,image_url:e.target.value})}/></div>
+          <div className="form-group"><label>Image (URL or Upload)</label>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <input className="form-input" style={{flex:1}} value={f.image_url} onChange={e=>setF({...f,image_url:e.target.value})} placeholder="Paste image URL or click Upload"/>
+              <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImgUpload} style={{display:'none'}} />
+              <button type="button" className="btn" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:4}}>
+                <IC.Upload style={{width:14,height:14}}/>{uploading ? 'Uploading...' : 'Upload'}
+              </button>
+            </div>
+            {f.image_url && <img src={f.image_url} alt="Preview" style={{width:100,height:60,objectFit:'cover',borderRadius:8,marginTop:8,border:'2px solid var(--border-light)'}}/>}
+          </div>
           <div className="form-group"><label>Tags</label><input className="form-input" value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="tag1, tag2"/></div>
         </div>
         <button className="btn btn-india" onClick={go} disabled={sv} style={{marginTop:8}}><IC.Send/>{sv?'Submitting…':'Submit for Review'}</button>
@@ -1067,6 +1092,134 @@ function SurveysManagementPage() {
 }
 
 // ─── Shells ───────────────────────────────────────────────────────────
+function WishesManagementPage() {
+  const toast = useToast();
+  const [wishes, setWishes] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [showCreate, setShowCreate] = React.useState(false);
+  const [form, setForm] = React.useState({title:'',message:'',wish_type:'birthday',person_name:'',image_url:'',display_on_home:false,occasion_date:'',expires_at:''});
+  const [uploading, setUploading] = React.useState(false);
+  const fileRef = React.useRef(null);
+
+  const load = async () => {
+    try { const r = await api.getWishes(); setWishes(r.data); } catch(e) { toast.show('Failed to load wishes','error'); }
+    setLoading(false);
+  };
+  React.useEffect(() => { load(); }, []);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const r = await api.uploadImage(file);
+      setForm(f => ({...f, image_url: r.data.url}));
+      toast.show('Image uploaded!');
+    } catch(err) {
+      toast.show('Upload failed: ' + (err.response?.data?.detail || err.message), 'error');
+    }
+    setUploading(false);
+  };
+
+  const handleCreate = async () => {
+    if (!form.title.trim()) { toast.show('Title required','error'); return; }
+    try {
+      const payload = {...form};
+      if (!payload.occasion_date) delete payload.occasion_date;
+      if (!payload.expires_at) delete payload.expires_at;
+      await api.createWish(payload);
+      toast.show('Wish created!');
+      setShowCreate(false);
+      setForm({title:'',message:'',wish_type:'birthday',person_name:'',image_url:'',display_on_home:false,occasion_date:'',expires_at:''});
+      load();
+    } catch(e) { toast.show('Failed: ' + (e.response?.data?.detail || e.message), 'error'); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Deactivate this wish?')) return;
+    try { await api.deleteWish(id); toast.show('Wish deactivated'); load(); } catch(e) { toast.show('Failed','error'); }
+  };
+
+  const typeColors = {birthday:'#e91e63',festival:'#ff9800',anniversary:'#f44336',custom:'#673ab7'};
+
+  return (
+    <div className="page">
+      <toast.El/>
+      <div className="page-header">
+        <div><h2>Wishes & Greetings</h2><p>Birthday, festival, and special occasion wishes</p></div>
+        <button className="btn btn-primary" onClick={()=>setShowCreate(!showCreate)}><IC.Plus style={{width:16,height:16}}/> Create Wish</button>
+      </div>
+
+      {showCreate && (
+        <div className="card" style={{marginBottom:24}}>
+          <div style={{padding:20}}>
+            <h3 style={{margin:'0 0 16px',fontSize:16,fontWeight:700}}>New Wish</h3>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Title *</label>
+                <input className="input" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Happy Birthday to..." /></div>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Person Name</label>
+                <input className="input" value={form.person_name} onChange={e=>setForm(f=>({...f,person_name:e.target.value}))} placeholder="Name of the person" /></div>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Type</label>
+                <select className="input" value={form.wish_type} onChange={e=>setForm(f=>({...f,wish_type:e.target.value}))}>
+                  <option value="birthday">Birthday</option><option value="festival">Festival</option>
+                  <option value="anniversary">Anniversary</option><option value="custom">Custom / Special</option>
+                </select></div>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Occasion Date</label>
+                <input className="input" type="datetime-local" value={form.occasion_date} onChange={e=>setForm(f=>({...f,occasion_date:e.target.value}))} /></div>
+              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Message</label>
+                <textarea className="input" rows={3} value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))} placeholder="Write your heartfelt message..." /></div>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Image</label>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <input className="input" value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))} placeholder="Image URL or upload" style={{flex:1}} />
+                  <input type="file" ref={fileRef} accept="image/*" onChange={handleImageUpload} style={{display:'none'}} />
+                  <button className="btn" onClick={()=>fileRef.current?.click()} disabled={uploading} style={{whiteSpace:'nowrap'}}>
+                    {uploading ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
+                {form.image_url && <img src={form.image_url} alt="" style={{width:80,height:60,objectFit:'cover',borderRadius:8,marginTop:8,border:'2px solid var(--border-light)'}} />}
+              </div>
+              <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Expires At</label>
+                <input className="input" type="datetime-local" value={form.expires_at} onChange={e=>setForm(f=>({...f,expires_at:e.target.value}))} /></div>
+              <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:8}}>
+                <input type="checkbox" checked={form.display_on_home} onChange={e=>setForm(f=>({...f,display_on_home:e.target.checked}))} id="wish-home" />
+                <label htmlFor="wish-home" style={{fontSize:13,fontWeight:600}}>Display on Homepage</label>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,marginTop:16}}>
+              <button className="btn btn-primary" onClick={handleCreate}>Create Wish</button>
+              <button className="btn" onClick={()=>setShowCreate(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>Loading...</div> : (
+        <div className="card">
+          <table className="data-table" style={{width:'100%'}}>
+            <thead><tr>
+              <th>Image</th><th>Title</th><th>Type</th><th>Person</th><th>Home</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              {wishes.map(w => (
+                <tr key={w.id}>
+                  <td>{w.image_url ? <img src={w.image_url} alt="" style={{width:48,height:36,objectFit:'cover',borderRadius:6}} /> : <span style={{color:'var(--text-muted)',fontSize:11}}>No image</span>}</td>
+                  <td style={{fontWeight:700}}>{w.title}</td>
+                  <td><span style={{background:typeColors[w.wish_type]||'#666',color:'#fff',padding:'2px 10px',borderRadius:20,fontSize:10,fontWeight:700,textTransform:'uppercase'}}>{w.wish_type}</span></td>
+                  <td>{w.person_name || '—'}</td>
+                  <td>{w.display_on_home ? <span className="badge badge-enabled">YES</span> : <span className="badge">NO</span>}</td>
+                  <td>{w.is_active ? <span className="badge badge-enabled">Active</span> : <span className="badge badge-deleted">Inactive</span>}</td>
+                  <td><button className="btn" style={{fontSize:11,padding:'4px 12px'}} onClick={()=>handleDelete(w.id)}>Deactivate</button></td>
+                </tr>
+              ))}
+              {wishes.length===0 && <tr><td colSpan={7} style={{textAlign:'center',padding:30,color:'var(--text-muted)'}}>No wishes created yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminShell({auth}) {
   return (
     <div className="app-layout">
@@ -1084,6 +1237,7 @@ function AdminShell({auth}) {
           <Route path="/users" element={<UsersPage/>}/>
           <Route path="/polls" element={<PollsManagementPage/>}/>
           <Route path="/surveys" element={<SurveysManagementPage/>}/>
+          <Route path="/wishes" element={<WishesManagementPage/>}/>
           <Route path="/settings" element={<SettingsPage/>}/>
           <Route path="*" element={<Navigate to="/"/>}/>
         </Routes>
@@ -1111,7 +1265,7 @@ export default function App() {
   const auth = useAuth();
   return (
     <AuthContext.Provider value={auth}>
-      <BrowserRouter>
+      <BrowserRouter basename={process.env.PUBLIC_URL || ''}>
         {!auth.isAuthenticated
           ? <Routes><Route path="*" element={<LoginPage onLogin={auth.doLogin}/>}/></Routes>
           : auth.isAdmin ? <AdminShell auth={auth}/> : <ReporterShell auth={auth}/>}

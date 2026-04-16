@@ -319,18 +319,19 @@ class ScraperFactory:
     @classmethod
     def create(cls, source_config: Dict[str, Any]) -> BaseScraper:
         source_name = source_config.get("name", "").lower()
+        scraper_type = source_config.get("scraper_type", "rss").lower()
 
-        # Check for dedicated scraper first
-        if source_name in cls._dedicated_scrapers:
-            logger.info(f"Using dedicated scraper for: {source_name}")
-            return cls._dedicated_scrapers[source_name](source_config)
+        # Check for dedicated scraper by name first, then by scraper_type
+        for key in (source_name, scraper_type):
+            if key in cls._dedicated_scrapers:
+                logger.info(f"Using dedicated scraper for: {key}")
+                return cls._dedicated_scrapers[key](source_config)
 
-        # Fall back to generic scrapers by type
-        scraper_type = source_config.get("scraper_type", "rss")
+        # Fall back to generic scrapers
         if scraper_type == "rss":
             return RSSScaper(source_config)
-        elif scraper_type == "html":
+        elif scraper_type in ("html", "manual"):
             return HTMLScraper(source_config)
         else:
-            logger.warning(f"Unknown scraper type: {scraper_type}, falling back to RSS")
+            logger.warning(f"Unknown scraper type: {scraper_type} for {source_name}, falling back to RSS")
             return RSSScaper(source_config)

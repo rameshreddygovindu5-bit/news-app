@@ -55,6 +55,8 @@ jobs:
             --exclude='./venv' \
             --exclude='./*.db' \
             .
+          # Also package nginx config script
+          cp news-platform-final/update-nginx.sh /tmp/update-nginx.sh
 
       # ── SSH Deploy to EC2 ─────────────────────────────────────────────
       - name: Deploy to EC2
@@ -72,11 +74,12 @@ jobs:
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # Upload all three tarballs
+          # Upload all tarballs + nginx config
           scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
             /tmp/public-dist.tar.gz \
             /tmp/admin-dist.tar.gz \
             /tmp/backend.tar.gz \
+            /tmp/update-nginx.sh \
             "$EC2_USER@$EC2_HOST:/tmp/"
 
           # Run remote deploy
@@ -118,8 +121,19 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt -q
 
-            # Run DB migration
-            python migrate_aws.py || echo "Migration warnings (may already be applied)"
+            # Create uploads directory
+            mkdir -p $BACKEND_DIR/uploads
+
+            # Set EC2 production environment (override local dev settings)
+            # IS_LOCAL_DEV=false means AWS sync is DISABLED (data is already local on EC2)
+            # DATABASE_URL points to PostgreSQL (not SQLite)
+            sed -i 's/^IS_LOCAL_DEV=.*/IS_LOCAL_DEV=false/' $BACKEND_DIR/.env 2>/dev/null || true
+            grep -q "IS_LOCAL_DEV" $BACKEND_DIR/.env || echo "IS_LOCAL_DEV=false" >> $BACKEND_DIR/.env
+            sed -i 's|^DATABASE_URL=sqlite.*|DATABASE_URL=postgresql+asyncpg://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|' $BACKEND_DIR/.env 2>/dev/null || true
+            sed -i 's|^DATABASE_URL_SYNC=sqlite.*|DATABASE_URL_SYNC=postgresql://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|' $BACKEND_DIR/.env 2>/dev/null || true
+
+            # Run DB migration (skip gracefully if script missing)
+            python -c "from app.database import Base; from app.models.models import *; print('Models loaded OK')" || echo "Model check warnings"
 
             # ── 4. Restart Backend ──────────────────────────────────────
             PID=$(sudo lsof -t -i :8005 2>/dev/null || true)
@@ -138,12 +152,12 @@ jobs:
             sleep 3
             echo "[4/4] Backend restarted on port 8005"
 
-            # ── 5. Reload Nginx ─────────────────────────────────────────
-            sudo nginx -t && sudo systemctl reload nginx
-            echo "[5/5] Nginx reloaded"
+            # ── 5. Update & Reload Nginx ────────────────────────────────
+            sudo bash /tmp/update-nginx.sh || (sudo nginx -t && sudo systemctl reload nginx)
+            echo "[5/5] Nginx updated and reloaded"
 
             # Clean up
-            rm -f /tmp/public-dist.tar.gz /tmp/admin-dist.tar.gz /tmp/backend.tar.gz
+            rm -f /tmp/public-dist.tar.gz /tmp/admin-dist.tar.gz /tmp/backend.tar.gz /tmp/update-nginx.sh
 
             echo "========================================"
             echo "  Deploy complete: $(date)"

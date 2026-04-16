@@ -240,15 +240,29 @@ img { object-fit: cover; background-color: #f1f5f9; }
   .article-content { font-size: 1rem; line-height: 1.75; }
   .article-content-telugu { font-size: 1.05rem; line-height: 1.9; }
   .article-content p, .article-content-telugu p { margin-bottom: 1.25rem; }
+  /* Tighter padding on mobile */
+  .max-w-7xl { padding-left: 0.5rem; padding-right: 0.5rem; }
 }
 
-/* Ensure mobile scrollable category bar has no visible scrollbar */
+/* FIX 3: Mobile scrollable category bar with scroll indicators */
 @media (max-width: 768px) {
   nav.overflow-x-auto {
     -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x mandatory;
+    scroll-snap-type: x proximity;
+    scroll-padding: 0 0.5rem;
+    /* Fade indicators on edges to show more items exist */
+    mask-image: linear-gradient(to right, transparent 0%, black 6%, black 92%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 92%, transparent 100%);
+    padding-left: 0.25rem;
+    padding-right: 1.5rem;
   }
   nav.overflow-x-auto > div > button {
     scroll-snap-align: start;
   }
+  /* Better spacing for mobile hero */
+  section .aspect-\[16\/9\] { aspect-ratio: 4/3; }
 }
+
+/* FIX 3: no-scrollbar utility */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

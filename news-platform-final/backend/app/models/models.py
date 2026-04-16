@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, Float, DateTime, ForeignKey,
-    CheckConstraint, ARRAY, JSON
+    CheckConstraint, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -60,7 +60,7 @@ class NewsArticle(Base):
     # Categorization
     category = Column(String(100))
     slug = Column(String(500), unique=True, index=True)
-    tags = Column(ARRAY(String), default=[])
+    tags = Column(JSON, default=list)
 
     # Social Media Flags
     is_posted_fb = Column(Boolean, default=False)
@@ -202,3 +202,21 @@ class PollOption(Base):
 
 # Alias for backward compatibility
 SchedulerLog = JobExecutionLog
+
+
+class Wish(Base):
+    """Birthday greetings, festival wishes, special occasion messages."""
+    __tablename__ = "wishes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(500), nullable=False)
+    message = Column(Text)
+    wish_type = Column(String(50), nullable=False, default="birthday")  # birthday, festival, anniversary, custom
+    person_name = Column(String(255))
+    occasion_date = Column(DateTime(timezone=True))
+    image_url = Column(String(1000))   # uploaded image or external URL
+    is_active = Column(Boolean, default=True)
+    display_on_home = Column(Boolean, default=False)  # show on homepage
+    created_by = Column(String(100))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))  # auto-hide after this date

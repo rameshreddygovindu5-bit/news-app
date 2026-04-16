@@ -9,10 +9,12 @@
  */
 import { useMemo } from "react";
 import { Link } from "wouter";
-import { TrendingUp, ArrowRight, Clock, Newspaper } from "lucide-react";
-import { NewsArticle, getTitle, getSummary, getImage, categoryPlaceholder } from "@/types/news";
+import { useQuery } from "@tanstack/react-query";
+import { TrendingUp, ArrowRight, Clock, Newspaper, Gift } from "lucide-react";
+import { NewsArticle, getTitle, getSummary, getImage, categoryPlaceholder, WishItem } from "@/types/news";
 import { ShareBar } from "@/components/news/ShareMenu";
 import { PollWidget } from "@/components/news/PollWidget";
+import { newsApi } from "@/lib/api";
 import { motion } from "framer-motion";
 
 const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -204,13 +206,53 @@ const SkeletonLayout = () => (
   </div>
 );
 
+/* ── Wishes Sidebar Widget ────────────────────────────────────────────── */
+function WishesSidebar() {
+  const { data: wishes } = useQuery<WishItem[]>({
+    queryKey: ["home-wishes"],
+    queryFn: () => newsApi.getHomeWishes(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (!wishes?.length) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl p-5 border border-pink-100">
+      <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-rose-600 mb-4 pb-3 border-b border-pink-200">
+        <Gift className="w-4 h-4" /> Wishes & Greetings
+      </h3>
+      <div className="space-y-3">
+        {wishes.slice(0, 3).map(w => (
+          <div key={w.id} className="flex gap-3 items-start">
+            {w.image_url ? (
+              <img src={w.image_url} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-pink-200" />
+            ) : (
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center shrink-0">
+                <Gift className="w-5 h-5 text-white" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-zinc-800 line-clamp-2 leading-snug">{w.title}</p>
+              {w.person_name && <p className="text-[10px] text-rose-500 font-medium mt-0.5">{w.person_name}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Link href="/wishes" className="flex items-center justify-center gap-1.5 mt-4 pt-3 border-t border-pink-200 text-[11px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-800 transition-colors">
+        View All <ArrowRight className="w-3 h-3" />
+      </Link>
+    </div>
+  );
+}
+
 /* ── Main Layout ─────────────────────────────────────────────────────── */
 export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoadingMore, selectedCategory }: Props) {
   const { featured, secondary, catGroups, allSorted } = useMemo(() => {
     if (!articles?.length) return { featured: null, secondary: [], catGroups: {} as Record<string, NewsArticle[]>, allSorted: [] };
+    // Sort by recency first (newest on top), rank_score as tiebreaker
     const sorted = [...articles].sort(
-      (a, b) => (b.rank_score || 0) - (a.rank_score || 0) ||
-        new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime()
+      (a, b) => new Date(b.published_at || b.created_at || 0).getTime() - new Date(a.published_at || a.created_at || 0).getTime()
+        || (b.rank_score || 0) - (a.rank_score || 0)
     );
     const safe = sorted.filter(a => a.original_title);
     const groups: Record<string, NewsArticle[]> = {};
@@ -424,24 +466,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
             </motion.section>
           ))}
 
-          {/* Load More */}
-          {hasMore && onLoadMore && (
-            <div className="flex justify-center pt-8 pb-4">
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLoadMore(); }}
-                disabled={isLoadingMore}
-                className="px-10 py-3.5 border-2 border-[var(--pf-navy)] text-[var(--pf-navy)] font-black text-sm uppercase tracking-wider rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all disabled:opacity-50 active:scale-95"
-              >
-                {isLoadingMore ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Loading…
-                  </span>
-                ) : "Load More Headlines"}
-              </button>
-            </div>
-          )}
+          {/* Load More - removed from here, moved below grid */}
         </div>
 
         {/* Sidebar */}
@@ -469,9 +494,31 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                 Subscribe
               </button>
             </div>
+
+            {/* Wishes & Greetings */}
+            <WishesSidebar />
           </div>
         </aside>
       </div>
+
+      {/* FIX 2: Load More — moved OUTSIDE grid so it's always visible */}
+      {hasMore && onLoadMore && (
+        <div className="flex justify-center pt-10 pb-4">
+          <button
+            type="button"
+            onClick={() => { onLoadMore(); }}
+            disabled={isLoadingMore}
+            className="px-10 py-3.5 border-2 border-[var(--pf-navy)] text-[var(--pf-navy)] font-black text-sm uppercase tracking-wider rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all disabled:opacity-50 active:scale-95"
+          >
+            {isLoadingMore ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Loading…
+              </span>
+            ) : "Load More Headlines"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -30,9 +30,14 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
 
   // FIX 5: Filter out categories that have zero articles (hide empty menus)
   const activeCategories = useMemo(() => {
-    if (!apiCategories || apiCategories.length === 0) return ['Home'];
-    const withArticles = apiCategories.filter(c => c.article_count > 0 || c.name === 'Home');
-    if (withArticles.length === 0) return ['Home'];
+    if (!apiCategories || apiCategories.length === 0) return [...DEFAULT_CATEGORIES];
+    // If ALL categories have 0 count, counts haven't been populated yet — show all
+    const totalCount = apiCategories.reduce((sum, c) => sum + (c.article_count || 0), 0);
+    if (totalCount === 0) {
+      return ['Home', ...apiCategories.filter(c => c.name !== 'Home').map(c => c.name)];
+    }
+    // Only hide categories once we know counts are populated (totalCount > 0)
+    const withArticles = apiCategories.filter(c => (c.article_count || 0) > 0 || c.name === 'Home');
     return ['Home', ...withArticles.filter(c => c.name !== 'Home').map(c => c.name)];
   }, [apiCategories]);
 
@@ -87,6 +92,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (cat === 'తెలుగు వార్తలు') { setLocation('/telugu'); return; }
+    if (cat === 'Wishes') { setLocation('/wishes'); return; }
     const id = cat === 'Home' ? '' : cat;
     onCategoryChange?.(id || 'All');
     if (id) setLocation(`/news?category=${id}`); else setLocation('/');
@@ -124,6 +130,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     if (insights.length > 0) items.push({ name: 'Insights & Polls', items: insights });
     
     items.push({ name: 'తెలుగు వార్తలు', path: 'తెలుగు వార్తలు', isSpecial: true });
+    items.push({ name: 'Wishes', path: 'Wishes', isWishes: true });
     return items;
   }, [activeCategories]);
 
@@ -269,6 +276,11 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all telugu
                   ${location === '/telugu' ? 'bg-[var(--pf-saffron)] text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
                 తెలుగు
+              </button>
+              <button onClick={() => { setLocation('/wishes'); }}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all
+                  ${location === '/wishes' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
+                Wishes
               </button>
             </div>
           </nav>

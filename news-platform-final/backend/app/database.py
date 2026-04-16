@@ -17,13 +17,11 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # ── Async engine (FastAPI routes) ─────────────────────────────────────
-async_engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,
-)
+_async_engine_kwargs = {"echo": False, "pool_pre_ping": True}
+if "sqlite" not in settings.DATABASE_URL:
+    _async_engine_kwargs.update({"pool_size": 20, "max_overflow": 10})
+
+async_engine = create_async_engine(settings.DATABASE_URL, **_async_engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
     class_=AsyncSession,
@@ -31,13 +29,11 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # ── Sync engine (Celery workers) ──────────────────────────────────────
-sync_engine = create_engine(
-    settings.DATABASE_URL_SYNC,
-    echo=False,
-    pool_size=10,
-    max_overflow=5,
-    pool_pre_ping=True,
-)
+_sync_engine_kwargs = {"echo": False, "pool_pre_ping": True}
+if "sqlite" not in settings.DATABASE_URL_SYNC:
+    _sync_engine_kwargs.update({"pool_size": 10, "max_overflow": 5})
+
+sync_engine = create_engine(settings.DATABASE_URL_SYNC, **_sync_engine_kwargs)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 
 
@@ -79,11 +75,12 @@ async def _seed_defaults():
 
     async with AsyncSessionLocal() as db:
         # ── Enable pg_trgm for similarity search (if PostgreSQL) ───────
-        try:
-            await db.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-            await db.commit()
-        except Exception:
-            await db.rollback()
+        if "postgresql" in settings.DATABASE_URL:
+            try:
+                await db.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
         # ── Default categories ────────────────────────────────────────
         existing_cats = (await db.execute(select(Category))).scalars().all()
@@ -142,3 +139,139 @@ async def _seed_defaults():
             ))
             await db.commit()
             logger.info("[DB] Default 'Peoples Feedback' source created")
+
+        # ── Default scraped sources — ALL registered scrapers ─────────
+        default_sources = [
+            # ── English / International ──
+            {
+                "name": "Times of India",
+                "url": "https://timesofindia.indiatimes.com",
+                "language": "en",
+                "scraper_type": "timesofindia",
+                "is_enabled": True,
+                "credibility_score": 0.85,
+                "priority": 8,
+                "scraper_config": {"max_articles": 50},
+            },
+            {
+                "name": "Al Jazeera",
+                "url": "https://www.aljazeera.com",
+                "language": "en",
+                "scraper_type": "aljazeera",
+                "is_enabled": True,
+                "credibility_score": 0.8,
+                "priority": 7,
+                "scraper_config": {"max_articles": 40},
+            },
+            {
+                "name": "OneIndia English",
+                "url": "https://www.oneindia.com",
+                "language": "en",
+                "scraper_type": "oneindia english",
+                "is_enabled": True,
+                "credibility_score": 0.7,
+                "priority": 6,
+                "scraper_config": {"max_articles": 40, "fetch_full_content": True},
+            },
+            # ── Telugu / Regional ──
+            {
+                "name": "GreatAndhra",
+                "url": "https://www.greatandhra.com",
+                "language": "en",
+                "scraper_type": "greatandhra",
+                "is_enabled": True,
+                "credibility_score": 0.7,
+                "priority": 6,
+                "scraper_config": {"max_articles": 60, "fetch_full_content": True, "request_delay": 0.8},
+            },
+            {
+                "name": "Eenadu",
+                "url": "https://www.eenadu.net",
+                "language": "te",
+                "scraper_type": "eenadu",
+                "is_enabled": True,
+                "credibility_score": 0.8,
+                "priority": 7,
+                "scraper_config": {"max_articles": 50},
+            },
+            {
+                "name": "Sakshi",
+                "url": "https://www.sakshi.com",
+                "language": "te",
+                "scraper_type": "sakshi",
+                "is_enabled": True,
+                "credibility_score": 0.8,
+                "priority": 7,
+                "scraper_config": {"max_articles": 50},
+            },
+            {
+                "name": "TV9 Telugu",
+                "url": "https://www.tv9telugu.com",
+                "language": "te",
+                "scraper_type": "tv9 telugu",
+                "is_enabled": True,
+                "credibility_score": 0.75,
+                "priority": 6,
+                "scraper_config": {"max_articles": 40},
+            },
+            {
+                "name": "OneIndia Telugu",
+                "url": "https://telugu.oneindia.com",
+                "language": "te",
+                "scraper_type": "oneindia telugu",
+                "is_enabled": True,
+                "credibility_score": 0.7,
+                "priority": 5,
+                "scraper_config": {"max_articles": 40, "fetch_full_content": True},
+            },
+            {
+                "name": "PrabhaNews",
+                "url": "https://www.prabhanews.com",
+                "language": "te",
+                "scraper_type": "prabhanews",
+                "is_enabled": True,
+                "credibility_score": 0.65,
+                "priority": 5,
+                "scraper_config": {"max_articles": 30},
+            },
+            {
+                "name": "Telugu123",
+                "url": "https://www.telugu123.com",
+                "language": "te",
+                "scraper_type": "telugu123",
+                "is_enabled": True,
+                "credibility_score": 0.6,
+                "priority": 4,
+                "scraper_config": {"max_articles": 30},
+            },
+            {
+                "name": "TeluguTimes Telugu",
+                "url": "https://www.telugutimes.net",
+                "language": "te",
+                "scraper_type": "telugutimes telugu",
+                "is_enabled": True,
+                "credibility_score": 0.6,
+                "priority": 4,
+                "scraper_config": {"max_articles": 30},
+            },
+        ]
+        for src_data in default_sources:
+            existing = (
+                await db.execute(
+                    select(NewsSource).where(NewsSource.name == src_data["name"])
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                db.add(NewsSource(
+                    name=src_data["name"],
+                    url=src_data["url"],
+                    language=src_data["language"],
+                    scraper_type=src_data["scraper_type"],
+                    is_enabled=src_data["is_enabled"],
+                    is_paused=False,
+                    credibility_score=src_data["credibility_score"],
+                    priority=src_data["priority"],
+                    scraper_config=src_data.get("scraper_config", {}),
+                ))
+                logger.info(f"[DB] Seeded source: {src_data['name']}")
+        await db.commit()

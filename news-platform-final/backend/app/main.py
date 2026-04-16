@@ -11,9 +11,12 @@ Production: run Celery Worker + Celery Beat for proper async scheduling.
 Development: single-process mode works fine — APScheduler runs in-process.
 """
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import create_tables
@@ -92,6 +95,11 @@ app.add_middleware(
 for router in all_routers:
     app.include_router(router)
 
+# ── Static file serving for uploaded images ───────────────────────────
+_upload_dir = Path(settings.UPLOAD_DIR)
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
+
 
 @app.get("/", tags=["Core"])
 async def root():
@@ -99,6 +107,8 @@ async def root():
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "running",
+        "mode": "local" if settings.IS_LOCAL_DEV else "production",
+        "aws_sync": settings.IS_LOCAL_DEV and settings.SCHEDULE_AWS_SYNC_ENABLED,
         "docs": "/docs",
     }
 

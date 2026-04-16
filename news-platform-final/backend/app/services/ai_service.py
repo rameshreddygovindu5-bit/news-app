@@ -13,7 +13,11 @@ Output: English rephrased article + Telugu translation, always.
 """
 import re, json, logging, time, hashlib
 from typing import Optional, Dict, List
-from langdetect import detect
+try:
+    from langdetect import detect
+except ImportError:
+    def detect(text):
+        return "en"
 
 from app.config import get_settings
 from app.services.category_service import category_service
@@ -174,25 +178,160 @@ def _validate(d: Dict, orig_title: str, orig_content: str) -> Dict:
 
 
 def _original_fallback(title: str, content: str) -> Dict:
-    """Return cleaned original content when all AI providers fail.
-    Applies source-name removal, paragraph preservation, and basic reformatting
-    to minimize copyright issues even without AI rephrasing."""
-    clean_title = _strip_source_names(title)
-    clean_content = _strip_source_names(content or title)
+    """Return cleaned, formatted original content when all AI providers fail.
+    Applies: source-name removal, paragraph formatting, sentence splitting,
+    bold highlights on key phrases, list structure preservation,
+    basic auto-categorization, and proper slug generation."""
+    clean_title = _strip_source_names(title).strip()
+    clean_content = _strip_source_names(content or title).strip()
 
+    # Format content with proper HTML paragraph structure
     if clean_content and not re.search(r'<(p|div|ul|ol|br)', clean_content, re.I):
-        paragraphs = re.split(r'\n\s*\n|\n', clean_content)
-        paragraphs = [p.strip() for p in paragraphs if p.strip()]
-        if paragraphs:
-            clean_content = ''.join(f'<p>{p}</p>' for p in paragraphs)
+        # Detect and preserve numbered/alphabetical lists
+        lines = re.split(r'\n', clean_content)
+        formatted_parts = []
+        current_list_type = None  # 'ol' or 'ul' or None
+        current_items = []
 
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                # Close any open list
+                if current_list_type and current_items:
+                    tag = current_list_type
+                    formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+                    current_items = []
+                    current_list_type = None
+                continue
+
+            # Check for numbered list items (1. 2. 3. or 1) 2) 3))
+            num_match = re.match(r'^(\d+)[.)\]]\s+(.+)', stripped)
+            # Check for alphabetical list items (a. b. c. or a) b))
+            alpha_match = re.match(r'^([a-zA-Z])[.)\]]\s+(.+)', stripped)
+            # Check for bullet list items (- or * or •)
+            bullet_match = re.match(r'^[-*•]\s+(.+)', stripped)
+
+            if num_match:
+                if current_list_type != 'ol' and current_items:
+                    tag = current_list_type or 'p'
+                    if tag == 'p':
+                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
+                    else:
+                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+                    current_items = []
+                current_list_type = 'ol'
+                current_items.append(num_match.group(2).strip())
+            elif alpha_match and len(alpha_match.group(1)) == 1:
+                if current_list_type != 'ol' and current_items:
+                    tag = current_list_type or 'p'
+                    if tag == 'p':
+                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
+                    else:
+                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+                    current_items = []
+                current_list_type = 'ol'
+                current_items.append(alpha_match.group(2).strip())
+            elif bullet_match:
+                if current_list_type != 'ul' and current_items:
+                    tag = current_list_type or 'p'
+                    if tag == 'p':
+                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
+                    else:
+                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+                    current_items = []
+                current_list_type = 'ul'
+                current_items.append(bullet_match.group(1).strip())
+            else:
+                # Regular paragraph line
+                if current_list_type and current_items:
+                    tag = current_list_type
+                    formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+                    current_items = []
+                    current_list_type = None
+                formatted_parts.append(f'<p>{stripped}</p>')
+
+        # Close any remaining list
+        if current_list_type and current_items:
+            tag = current_list_type
+            formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
+        elif current_items:
+            formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
+
+        if formatted_parts:
+            clean_content = ''.join(formatted_parts)
+        else:
+            # Fallback: split by sentences for readability
+            paragraphs = re.split(r'\n\s*\n', clean_content)
+            paragraphs = [p.strip() for p in paragraphs if p.strip() and len(p.strip()) > 10]
+            if paragraphs:
+                if len(paragraphs) == 1 and len(paragraphs[0]) > 300:
+                    sentences = re.split(r'(?<=[.!?])\s+', paragraphs[0])
+                    chunks = []
+                    current = []
+                    for s in sentences:
+                        current.append(s)
+                        if len(current) >= 3:
+                            chunks.append(' '.join(current))
+                            current = []
+                    if current:
+                        chunks.append(' '.join(current))
+                    clean_content = ''.join(f'<p>{c}</p>' for c in chunks)
+                else:
+                    clean_content = ''.join(f'<p>{p}</p>' for p in paragraphs)
+
+    # Add bold highlights to the first sentence of first paragraph for emphasis
+    if '<p>' in clean_content:
+        def bold_first_sentence(match):
+            inner = match.group(1)
+            # Bold the first sentence only
+            parts = re.split(r'(?<=[.!?])\s+', inner, maxsplit=1)
+            if len(parts) > 1:
+                return f'<p><b>{parts[0]}</b> {parts[1]}</p>'
+            return f'<p><b>{inner}</b></p>'
+        # Only bold the first paragraph
+        clean_content = re.sub(r'<p>(.*?)</p>', bold_first_sentence, clean_content, count=1, flags=re.S)
+
+    # Basic auto-categorization from keywords
+    cat = "Home"
+    text_lower = f"{clean_title} {clean_content[:500]}".lower()
+    cat_keywords = {
+        "Sports": ["cricket", "football", "tennis", "ipl", "match", "player", "team", "sport", "game", "nba", "nfl"],
+        "Tech": ["technology", "software", "ai ", "google", "apple", "microsoft", "startup", "app ", "cyber", "digital", "data"],
+        "Politics": ["election", "minister", "government", "congress", "bjp", "parliament", "vote", "political", "policy", "senate"],
+        "Business": ["market", "stock", "economy", "revenue", "company", "billion", "million", "trade", "invest", "bank", "financial"],
+        "Health": ["health", "medical", "doctor", "hospital", "disease", "vaccine", "drug", "patient", "treatment", "who "],
+        "Entertainment": ["movie", "film", "actor", "actress", "bollywood", "hollywood", "music", "celebrity", "oscar", "grammy"],
+        "Science": ["research", "study", "scientist", "space", "nasa", "planet", "climate", "environment", "fossil"],
+        "World": ["ukraine", "russia", "china", "europe", "international", "global", "un ", "nato", "foreign"],
+    }
+    for c, keywords in cat_keywords.items():
+        if any(kw in text_lower for kw in keywords):
+            cat = c
+            break
+
+    # Generate slug
     slug = re.sub(r'[^\w\s-]', '', clean_title.lower()).strip()
     slug = re.sub(r'[\s_-]+', '-', slug)[:80]
+
+    # Generate basic tags
+    words = re.findall(r'\b[a-z]{4,}\b', text_lower)
+    word_freq = {}
+    stopwords = {"that", "this", "with", "from", "have", "been", "were", "will", "also", "which", "their", "about", "said", "more", "than", "into", "after", "some", "when", "would", "could"}
+    for w in words:
+        if w not in stopwords:
+            word_freq[w] = word_freq.get(w, 0) + 1
+    tags = sorted(word_freq, key=word_freq.get, reverse=True)[:5]
+
+    logger.warning(f"[AI] FALLBACK: Using cleaned original for '{clean_title[:50]}' — configure AI API keys for proper rephrasing")
+
     return {
         "rephrased_title": clean_title,
         "rephrased_content": clean_content,
-        "category": "Home", "tags": [], "slug": slug,
-        "telugu_title": "", "telugu_content": "",
+        "category": cat,
+        "tags": tags,
+        "slug": slug,
+        "telugu_title": "",
+        "telugu_content": "",
         "method": "original_cleaned",
     }
 
@@ -270,7 +409,7 @@ LANG_NAMES = {
 
 class AIService:
     def process_article(self, title: str, content: str) -> Dict:
-        """Process through AI chain: P1 Gemini -> P2 Gemini2 -> P3 OpenAI -> P4 Ollama -> Original cleaned."""
+        """Process through AI chain: P1 Gemini -> P2 Gemini2 -> P3 Gemini3 -> P4 OpenAI -> P5 Ollama -> Original cleaned."""
         lang_code = _detect_lang(f"{title} {content}")
         lang_name = LANG_NAMES.get(lang_code, "Unknown")
         prompt = _build_prompt(title, content, lang_name)
@@ -293,20 +432,29 @@ class AIService:
             logger.info(f"[AI] P2-Gemini-Secondary OK: {title[:50]}")
             return result
 
-        # Priority 3: OpenAI
+        # Priority 3: Gemini TERTIARY
+        tertiary_key = getattr(settings, "GEMINI_API_KEY_TERTIARY", "")
+        raw = _try_gemini(tertiary_key, prompt, "Gemini-Tertiary")
+        if raw:
+            result = _parse_result(raw, title, content)
+            result["method"] = "gemini_tertiary"
+            logger.info(f"[AI] P3-Gemini-Tertiary OK: {title[:50]}")
+            return result
+
+        # Priority 4: OpenAI
         raw = _try_openai(prompt)
         if raw:
             result = _parse_result(raw, title, content)
             result["method"] = "openai"
-            logger.info(f"[AI] P3-OpenAI OK: {title[:50]}")
+            logger.info(f"[AI] P4-OpenAI OK: {title[:50]}")
             return result
 
-        # Priority 4: Ollama local
+        # Priority 5: Ollama local
         raw = _try_ollama(prompt)
         if raw:
             result = _parse_result(raw, title, content)
             result["method"] = "ollama"
-            logger.info(f"[AI] P4-Ollama OK: {title[:50]}")
+            logger.info(f"[AI] P5-Ollama OK: {title[:50]}")
             return result
 
         # Last Resort: Original cleaned

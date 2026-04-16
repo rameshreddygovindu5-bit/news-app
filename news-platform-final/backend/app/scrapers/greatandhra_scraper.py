@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 ENG_BASE = "https://www.greatandhra.com"
 TEL_BASE = "https://telugu.greatandhra.com"
 
-ENG_ARTICLE_RE = re.compile(r"https?://(?:www\.)?greatandhra\.com/.+-(\d{5,7})$")
-TEL_ARTICLE_RE = re.compile(r"https?://telugu\.greatandhra\.com/.+\.html$")
+ENG_ARTICLE_RE = re.compile(r"https?://(?:www\.)?greatandhra\.com/[a-z].+[\w-]")
+TEL_ARTICLE_RE = re.compile(r"https?://telugu\.greatandhra\.com/[a-z].+[\w-]")
 
 # Correct section URLs verified from actual site navigation
 ENG_LISTING_SECTIONS = [
@@ -154,6 +154,13 @@ class GreatAndhraScraper(BaseScraper):
 
     def _is_article(self, url: str) -> bool:
         if not url or is_excluded(url):
+            return False
+        if len(url) < 40:  # Too short to be an article URL
+            return False
+        # Exclude pure section listing URLs (single segment after domain)
+        path = url.split("greatandhra.com/", 1)[-1] if "greatandhra.com/" in url else ""
+        if path and "/" not in path.rstrip("/") and not path.endswith(".html"):
+            # Single segment like "/latest" or "/politics" — listing page, not article
             return False
         return bool(self.article_re.match(url))
 
@@ -397,6 +404,21 @@ class GreatAndhraScraper(BaseScraper):
                 content_parts.append(text)
 
         result["content"] = "\n\n".join(content_parts)
+
+        # newspaper3k fallback if content is too short
+        if not result["content"] or len(result["content"]) < 80:
+            try:
+                from app.scrapers.content_extractor import extract_article
+                import asyncio
+                np_result = await extract_article(url, html)
+                if np_result.get("success") and len(np_result.get("content", "")) > len(result["content"] or ""):
+                    result["content"] = np_result["content"]
+                    if not result["image_url"] and np_result.get("image_url"):
+                        result["image_url"] = np_result["image_url"]
+                    if not result["published_at"] and np_result.get("published_at"):
+                        result["published_at"] = np_result["published_at"]
+            except Exception as e:
+                logger.debug(f"[GA] newspaper3k fallback failed for {url}: {e}")
 
         # Tags
         tags_label = soup.find(["strong", "b"], string=re.compile(r"Tags:", re.I))

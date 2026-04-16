@@ -171,3 +171,4 @@ class AlJazeeraScraper(BaseScraper):
 
 
 ScraperFactory.register("aljazeera", AlJazeeraScraper)
+ScraperFactory.register("al jazeera", AlJazeeraScraper)

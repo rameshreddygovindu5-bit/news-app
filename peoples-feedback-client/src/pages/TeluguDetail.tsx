@@ -88,7 +88,6 @@ export default function TeluguDetail() {
           </h1>
           <div className="flex items-center gap-4 text-white/70 text-sm">
             <span className="flex items-center gap-1.5"><Clock className="w-4 h-4"/>{fmtDate(article.published_at)}</span>
-            {article.source_name && <span>• {article.source_name}</span>}
           </div>
         </div>
       </div>

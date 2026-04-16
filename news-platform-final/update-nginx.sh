@@ -14,7 +14,7 @@ set -e
 
 API_BACKEND="${API_BACKEND:-http://127.0.0.1:8005}"
 DEPLOY_DIR="/var/www/peoples-feedback"
-ADMIN_DIR="/var/www/admin-ui"
+ADMIN_DIR="/var/www/peoples-feedback-admin"
 
 echo "Creating nginx config..."
 
@@ -34,9 +34,22 @@ server {
     }
 
     # ── Admin UI ──
-    location /admin {
-        alias $ADMIN_DIR;
+    location /admin/ {
+        alias $ADMIN_DIR/;
+        index index.html;
         try_files \$uri \$uri/ /admin/index.html;
+    }
+    # Admin without trailing slash redirect
+    location = /admin {
+        return 301 /admin/;
+    }
+
+    # ── Uploaded Images ──
+    location /uploads/ {
+        alias \$HOME/news-platform-final/backend/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        add_header Access-Control-Allow-Origin * always;
     }
 
     # ── API Proxy ──

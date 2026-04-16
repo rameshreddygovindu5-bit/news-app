@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models.models import AdminUser
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer()
 
 

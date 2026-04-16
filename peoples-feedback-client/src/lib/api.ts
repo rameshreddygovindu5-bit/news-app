@@ -22,8 +22,8 @@ export const newsApi = {
   getArticles: (p: { page?: number; page_size?: number; category?: string; keyword?: string; lang?: string }) =>
     get<import('@/types/news').ArticleListResponse>('/api/articles', { ...p, flags: 'A,Y' }),
 
-  /** Top 100 ranked news (flag=Y) */
-  getTopNews: (limit = 100) =>
+  /** Top 500 ranked news (flag=Y) */
+  getTopNews: (limit = 500) =>
     get<import('@/types/news').NewsArticle[]>('/api/articles/top-news', { limit }),
 
   /** Single article by id or slug */
@@ -44,4 +44,12 @@ export const newsApi = {
   /** Categories from backend DB (dynamic) */
   getCategories: () =>
     get<import('@/types/news').CategoryResponse[]>('/api/categories'),
+
+  /** Active wishes for public display */
+  getActiveWishes: (wish_type?: string) =>
+    get<import('@/types/news').WishItem[]>('/api/wishes/active', { wish_type }),
+
+  /** Wishes marked for homepage display */
+  getHomeWishes: () =>
+    get<import('@/types/news').WishItem[]>('/api/wishes/home'),
 };

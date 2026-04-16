@@ -134,6 +134,11 @@ export function PremiumFooter() {
                   తెలుగు వార్తలు
                 </Link>
               </li>
+              <li>
+                <Link href="/wishes" className="text-rose-400 hover:text-white transition-all inline-block font-bold">
+                  Wishes & Greetings
+                </Link>
+              </li>
             </ul>
           </div>
 

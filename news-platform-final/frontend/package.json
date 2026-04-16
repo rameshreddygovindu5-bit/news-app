@@ -1,6 +1,7 @@
 {
   "name": "news-aggregator-admin",
   "version": "1.0.0",
+  "homepage": "/admin",
   "private": true,
   "dependencies": {
     "axios": "^1.6.2",

@@ -79,6 +79,22 @@ export const updateSchedulerConfig = (data) => api.put('/api/scheduler/config', 
 export const processYouTube = (url, sourceId) => api.post('/api/youtube/process', { url, source_id: sourceId });
 export const saveYouTubeArticle = (data) => api.post('/api/youtube/save', data);
 
+// File Upload
+export const uploadImage = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post('/api/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+// Wishes / Greetings
+export const getWishes = (params) => api.get('/api/wishes', { params });
+export const getActiveWishes = (params) => api.get('/api/wishes/active', { params });
+export const createWish = (data) => api.post('/api/wishes', data);
+export const updateWish = (id, data) => api.put(`/api/wishes/${id}`, data);
+export const deleteWish = (id) => api.delete(`/api/wishes/${id}`);
+
 // Polls
 export const getPolls = () => api.get('/api/polls');
 export const createPoll = (data) => api.post('/api/polls', data);

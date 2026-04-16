@@ -29,7 +29,11 @@ from app.models.models import (
 from app.scrapers.base_scraper import ScraperFactory
 from app.services.ai_service import ai_service
 from app.services.social_service import social_service
-import psycopg2
+
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -79,13 +83,23 @@ def log_job(db, job_name, triggered_by="cron"):
     stale = datetime.now(timezone.utc) - timedelta(hours=2)
     db.execute(update(JobExecutionLog).where(JobExecutionLog.status=="RUNNING", JobExecutionLog.started_at<stale).values(status="FAILED", ended_at=func.now(), error_summary="Stale lock"))
     db.commit()
-    sql = text("INSERT INTO job_execution_log (job_name,run_id,started_at,status,triggered_by) SELECT :n,:i,NOW(),'RUNNING',:t WHERE NOT EXISTS (SELECT 1 FROM job_execution_log WHERE job_name=:n AND status='RUNNING') RETURNING id;")
-    row = db.execute(sql, {"n": job_name, "i": run_id, "t": triggered_by}).fetchone()
-    if not row:
+    
+    # Check if already running
+    running = db.query(JobExecutionLog).filter(JobExecutionLog.job_name==job_name, JobExecutionLog.status=="RUNNING").first()
+    if running:
         logger.info(f"[JOB] {job_name} already running — skip")
         return None
+    
+    # Insert new job log (works with both SQLite and PostgreSQL)
+    log_entry = JobExecutionLog(
+        job_name=job_name, run_id=run_id,
+        started_at=datetime.now(timezone.utc),
+        status="RUNNING", triggered_by=triggered_by
+    )
+    db.add(log_entry)
     db.commit()
-    return db.query(JobExecutionLog).get(row[0])
+    db.refresh(log_entry)
+    return log_entry
 
 def complete_job(db, log, ok, err, error_summary=None):
     if not log: return
@@ -161,25 +175,34 @@ def worker_scrape_source(source_id: int, run_id: str) -> Dict:
             loop.close()
 
         for a in articles:
-            ch = content_hash(source_id, a.title)
+            # Strip source names from content before storage
+            from app.services.ai_service import _strip_source_names
+            clean_title = _strip_source_names(a.title).strip()
+            clean_content = _strip_source_names(a.content or a.title).strip()
+            
+            ch = content_hash(source_id, clean_title)
             if db.query(NewsArticle.id).filter(NewsArticle.content_hash==ch).first():
                 continue
             is_dup = False; dup_id = None
             try:
-                match = db.execute(text("SELECT id FROM news_articles WHERE created_at>NOW()-INTERVAL '48 hours' AND is_duplicate=FALSE AND similarity(original_title,:t)>0.85 LIMIT 1"), {"t": a.title}).fetchone()
+                if "postgresql" in settings.DATABASE_URL_SYNC:
+                    match = db.execute(text("SELECT id FROM news_articles WHERE created_at>NOW()-INTERVAL '48 hours' AND is_duplicate=FALSE AND similarity(original_title,:t)>0.85 LIMIT 1"), {"t": clean_title}).fetchone()
+                else:
+                    # SQLite fallback: exact title match within 2 days
+                    match = db.execute(text("SELECT id FROM news_articles WHERE created_at>datetime('now','-2 days') AND is_duplicate=FALSE AND original_title=:t LIMIT 1"), {"t": clean_title}).fetchone()
                 if match: is_dup=True; dup_id=match[0]
             except Exception: pass
-            clean = re.sub(r'[^\w\s-]','',a.title.lower()).strip().replace(' ','-')[:100]
-            slug = f"{clean}-{hashlib.md5(a.url.encode()).hexdigest()[:6]}"
+            clean_slug = re.sub(r'[^\w\s-]','',clean_title.lower()).strip().replace(' ','-')[:100]
+            slug = f"{clean_slug}-{hashlib.md5(a.url.encode()).hexdigest()[:6]}"
             new_art = NewsArticle(
-                source_id=source_id, original_title=a.title,
-                original_content=a.content or a.title, original_url=a.url,
+                source_id=source_id, original_title=clean_title,
+                original_content=clean_content or clean_title, original_url=a.url,
                 original_language=src.language or "en",
                 published_at=a.published_at or datetime.now(timezone.utc),
                 image_url=a.image_url, content_hash=ch,
                 is_duplicate=is_dup, duplicate_of_id=dup_id,
                 flag="A", ai_status="pending",
-                rephrased_title=a.title, rephrased_content=a.content or a.title,
+                rephrased_title=clean_title, rephrased_content=clean_content or clean_title,
                 category="Home", slug=slug,
             )
             db.add(new_art); db.commit(); stats["inserted"] += 1
@@ -256,9 +279,9 @@ def update_top_100_ranking():
         db.execute(update(NewsArticle).where(NewsArticle.flag=="Y").values(flag="A"))
         db.commit()
 
-        # Find candidates — expand window until enough
+        # Find candidates — expand window until we have enough for 500 target
         candidates = []
-        for days in [2, 7, 30, 60]:
+        for days in [3, 7, 14, 30, 60]:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status=="completed",
@@ -266,13 +289,14 @@ def update_top_100_ranking():
                 NewsArticle.is_duplicate==False,
                 NewsArticle.flag.in_(["A","Y"]),
             ).all()
-            if len(candidates) >= 150: break
+            if len(candidates) >= settings.TOP_NEWS_COUNT: break
 
         if not candidates:
+            # Ultimate fallback: get ALL completed non-duplicate articles ordered by recency
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status=="completed",
                 NewsArticle.is_duplicate==False,
-            ).order_by(desc(NewsArticle.created_at)).limit(300).all()
+            ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()
 
         if not candidates:
             complete_job(db, log, 0, 0, "No candidates"); return
@@ -344,6 +368,16 @@ def sync_to_aws():
 
     if not (settings.AWS_DB_HOST and settings.AWS_DB_USER and settings.AWS_DB_PASSWORD):
         complete_job(db, log, 0, 0, "AWS creds not configured")
+        db.close(); return
+
+    # Only sync to AWS when running locally (IS_LOCAL_DEV=true).
+    # On EC2/AWS production, data is already in the production DB.
+    if not settings.IS_LOCAL_DEV:
+        complete_job(db, log, 0, 0, "Skipped — running on AWS (IS_LOCAL_DEV=false)")
+        db.close(); return
+
+    if psycopg2 is None:
+        complete_job(db, log, 0, 0, "psycopg2 not installed — pip install psycopg2-binary")
         db.close(); return
 
     try:
@@ -424,7 +458,10 @@ def sync_to_aws():
 def update_category_counts():
     db = get_db()
     try:
-        db.execute(text("UPDATE categories c SET article_count=(SELECT COUNT(*) FROM news_articles a WHERE a.category=c.name AND a.flag!='D')"))
+        if "postgresql" in settings.DATABASE_URL_SYNC:
+            db.execute(text("UPDATE categories c SET article_count=(SELECT COUNT(*) FROM news_articles a WHERE a.category=c.name AND a.flag!='D')"))
+        else:
+            db.execute(text("UPDATE categories SET article_count=(SELECT COUNT(*) FROM news_articles WHERE news_articles.category=categories.name AND news_articles.flag!='D')"))
         db.commit(); logger.info("[CATS] Counts refreshed")
     except Exception as e: logger.error(f"[CATS] {e}")
     finally: db.close()

@@ -150,3 +150,19 @@ export const readTime = (html: string): number => {
   const words = html.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.ceil(words / 220));
 };
+
+/** Wish/Greeting item for birthday, festival, etc. */
+export interface WishItem {
+  id: number;
+  title: string;
+  message?: string;
+  wish_type: string;          // birthday, festival, anniversary, custom
+  person_name?: string;
+  occasion_date?: string;
+  image_url?: string;
+  is_active: boolean;
+  display_on_home: boolean;
+  created_by?: string;
+  created_at: string;
+  expires_at?: string;
+}

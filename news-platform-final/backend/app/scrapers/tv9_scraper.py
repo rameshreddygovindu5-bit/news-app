@@ -3,97 +3,257 @@ TV9Telugu.com — Major Telugu news channel.
 RSS: https://www.tv9telugu.com/feed
 Sections: andhra-pradesh, telangana, national, business, technology, sports, entertainment
 """
-import asyncio, logging, feedparser
+import asyncio, logging, feedparser, re
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Set, Dict, Optional
 from bs4 import BeautifulSoup
 from app.scrapers.base_scraper import BaseScraper, ScrapedArticle, ScraperFactory
+from app.scrapers.scraper_utils import (
+    normalize_url, is_excluded_url, extract_image, filter_content,
+    fetch_with_retry, extract_date_from_text, validate_article,
+    ArticleExtractor
+)
 
 logger = logging.getLogger(__name__)
 
-BASE = "https://www.tv9telugu.com"
-RSS_FEEDS = [f"{BASE}/feed"]
+BASE = "https://tv9telugu.com"
+RSS_FEEDS = []  # RSS feed not working properly
 HTML_SECTIONS = ["andhra-pradesh", "telangana", "national", "business",
                  "technology", "sports", "entertainment", "international"]
 
+# URL exclusion patterns
+EXCLUDE_PATTERNS = [
+    "/photo", "/video-", "/live", "#", "javascript:", "/tag/",
+    "/gallery", "/epaper", "/convergence", "/aboutus", "/contactus",
+    "tv9news.app.link", "play.google.com", "app", "download"
+]
+
+# Date patterns specific to TV9
+DATE_PATTERNS = [
+    re.compile(r"(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)"),
+    re.compile(r"(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2}):(\d{2})"),
+]
+
+
 class TV9TeluguScraper(BaseScraper):
+    def __init__(self, source_config):
+        super().__init__(source_config)
+        self.max_articles = self.scraper_config.get("max_articles", 50)
+        self.request_delay = self.scraper_config.get("request_delay", 0.5)
+        self.max_retries = self.scraper_config.get("max_retries", 2)
+        self.fetch_full_content = self.scraper_config.get("fetch_full_content", True)
+        self.sequential_mode = self.scraper_config.get("sequential_mode", False)
+        
+        # Initialize article extractor
+        self.extractor = ArticleExtractor(
+            base_url=BASE,
+            content_selectors=[
+                ".article-full-content", ".article-body", ".entry-content", 
+                ".story-details", ".post-content", ".article-content"
+            ],
+            image_selectors=[
+                ".article-image img", ".featured-image img", "article img",
+                ".post-thumbnail img", ".entry-thumbnail img"
+            ]
+        )
+    
+    def _is_valid_article_url(self, url: str) -> bool:
+        """Check if URL is a valid article URL."""
+        if not url or is_excluded_url(url, EXCLUDE_PATTERNS):
+            return False
+        # TV9 specific pattern - must contain date and be a proper news article
+        path = url.replace(BASE, "")
+        if "/" not in path or len(url) < len(BASE) + 10:
+            return False
+        # Ensure it looks like a news article (has date pattern)
+        if not any(pattern.search(path) for pattern in DATE_PATTERNS):
+            # Still accept if it's a category page with news
+            return any(cat in path for cat in ["andhra-pradesh", "telangana", "national", "business", "technology", "sports", "entertainment", "international"])
+        return True
+    
+    async def _fetch_with_retry(self, url: str) -> Optional[str]:
+        """Fetch URL with retry logic."""
+        return await fetch_with_retry(self, url, self.max_retries, self.request_delay)
+    
+    def _extract_links_from_html(self, html: str, seen: Set[str]) -> List[Dict]:
+        """Extract article links from HTML page."""
+        soup = BeautifulSoup(html, "lxml")
+        articles = []
+        
+        for a_tag in soup.find_all("a", href=True):
+            href = normalize_url(BASE, a_tag.get("href", ""))
+            if not self._is_valid_article_url(href) or href in seen:
+                continue
+            
+            title = (a_tag.get("title") or "").strip()
+            if not title:
+                title = a_tag.get_text(strip=True)
+            if not title or len(title) < 12:
+                continue
+            
+            seen.add(href)
+            
+            # Extract additional info from parent
+            parent = a_tag.find_parent(["li", "div", "article", "td"])
+            summary = ""
+            published_at = None
+            
+            if parent:
+                parent_text = parent.get_text(" ", strip=True)
+                published_at = extract_date_from_text(parent_text, DATE_PATTERNS)
+                # Look for summary in parent
+                for child in parent.children:
+                    if hasattr(child, 'get_text'):
+                        txt = child.get_text(strip=True)
+                        if (txt and len(txt) > 30 and 
+                            txt != title and 
+                            "Published Date" not in txt):
+                            summary = txt
+                            break
+            
+            image_url = extract_image(a_tag, BASE) or extract_image(parent, BASE)
+            
+            articles.append({
+                "url": href,
+                "title": title,
+                "image_url": image_url,
+                "summary": summary,
+                "published_at": published_at,
+            })
+        
+        return articles
+    async def _process_rss_entry(self, entry, seen: Set[str]) -> Optional[ScrapedArticle]:
+        """Process a single RSS entry."""
+        link = entry.get("link", "")
+        if not link or link in seen:
+            return None
+        
+        seen.add(link)
+        title = entry.get("title", "")
+        if not title or len(title) < 5:
+            return None
+        
+        # Parse date
+        pub_date = None
+        for attr in ("published_parsed", "updated_parsed"):
+            p = getattr(entry, attr, None)
+            if p:
+                pub_date = datetime(*p[:6], tzinfo=timezone.utc)
+                break
+        
+        # Extract summary
+        summary = entry.get("summary", "")
+        if summary:
+            summary = BeautifulSoup(summary, "lxml").get_text(separator=" ", strip=True)
+        
+        # Extract image
+        image_url = None
+        if hasattr(entry, "media_content") and entry.media_content:
+            image_url = entry.media_content[0].get("url")
+        
+        # Fetch full content
+        content = summary
+        if self.fetch_full_content and link:
+            html = await self._fetch_with_retry(link)
+            if html:
+                soup = self.parse_html(html)
+                extracted = self.extractor.extract_content(soup, title)
+                if len(extracted) > len(summary or ""):
+                    content = extracted
+                if not image_url:
+                    image_url = self.extractor.extract_image(soup)
+        
+        # newspaper3k fallback
+        if not content or len(content) < 80:
+            result = await self.extractor.extract_with_newspaper3k(link)
+            if result.get("success") and len(result.get("content", "")) > len(content or ""):
+                content = result["content"]
+                if not image_url and result.get("image_url"):
+                    image_url = result["image_url"]
+        
+        return ScrapedArticle(
+            title=title,
+            content=content or "",
+            url=link,
+            published_at=pub_date or datetime.now(timezone.utc),
+            image_url=image_url,
+            author="TV9 Telugu"
+        )
+    
+    async def _process_html_article(self, article_data: Dict) -> Optional[ScrapedArticle]:
+        """Process article from HTML scraping."""
+        url = article_data["url"]
+        title = article_data["title"]
+        
+        if not self.fetch_full_content:
+            return ScrapedArticle(
+                title=title,
+                content=article_data.get("summary", ""),
+                url=url,
+                published_at=article_data.get("published_at") or datetime.now(timezone.utc),
+                image_url=article_data.get("image_url"),
+                author="TV9 Telugu"
+            )
+        
+        html = await self._fetch_with_retry(url)
+        if not html:
+            return None
+        
+        soup = self.parse_html(html)
+        content = self.extractor.extract_content(soup, title)
+        image_url = self.extractor.extract_image(soup) or article_data.get("image_url")
+        
+        # newspaper3k fallback
+        if not content or len(content) < 80:
+            result = await self.extractor.extract_with_newspaper3k(url, html)
+            if result.get("success"):
+                content = result["content"]
+                if not image_url and result.get("image_url"):
+                    image_url = result["image_url"]
+        
+        return ScrapedArticle(
+            title=title,
+            content=content or "",
+            url=url,
+            published_at=article_data.get("published_at") or datetime.now(timezone.utc),
+            image_url=image_url,
+            author="TV9 Telugu"
+        )
+    
     async def scrape(self) -> List[ScrapedArticle]:
         articles = []
         seen = set()
-
-        # RSS first
-        for feed_url in RSS_FEEDS:
-            if len(articles) >= self.max_articles: break
-            xml = await self.fetch_url(feed_url)
-            if not xml: continue
-            feed = feedparser.parse(xml)
-            if feed.entries:
-                logger.info(f"[TV9] RSS: {len(feed.entries)} entries")
-            for entry in feed.entries:
-                if len(articles) >= self.max_articles: break
-                link = entry.get("link", "")
-                if not link or link in seen: continue
-                seen.add(link)
-                title = entry.get("title", "")
-                if not title: continue
-                pub_date = None
-                for attr in ("published_parsed", "updated_parsed"):
-                    p = getattr(entry, attr, None)
-                    if p: pub_date = datetime(*p[:6], tzinfo=timezone.utc); break
-                summary = entry.get("summary", "")
-                if summary: summary = BeautifulSoup(summary, "lxml").get_text(separator=" ", strip=True)
-                image_url = None
-                if hasattr(entry, "media_content") and entry.media_content:
-                    image_url = entry.media_content[0].get("url")
-
-                content = summary
-                try:
-                    html = await self.fetch_url(link)
-                    if html:
-                        soup = self.parse_html(html)
-                        for sel in [".article-full-content", ".article-body", ".entry-content", ".story-details"]:
-                            elem = soup.select_one(sel)
-                            if elem:
-                                full = " ".join(p.get_text(strip=True) for p in elem.find_all("p") if p.get_text(strip=True))
-                                if len(full) > len(content or ""): content = full
-                                break
-                        if not image_url:
-                            img = soup.select_one(".article-image img, .featured-image img, article img")
-                            if img: image_url = img.get("src") or img.get("data-src")
-                except Exception: pass
-                await asyncio.sleep(0.3)
-                art = ScrapedArticle(title=title, content=content or "", url=link,
-                                     published_at=pub_date or datetime.now(timezone.utc),
-                                     image_url=image_url, author="TV9 Telugu")
-                if art.is_valid(): articles.append(art)
-
-        # HTML fallback
-        if len(articles) < 5:
-            for section in HTML_SECTIONS:
-                if len(articles) >= self.max_articles: break
-                html = await self.fetch_url(f"{BASE}/{section}")
-                if not html: continue
-                soup = self.parse_html(html)
-                for a in soup.find_all("a", href=True):
-                    if len(articles) >= self.max_articles: break
-                    href = a["href"]
-                    if not href.startswith("http"): href = f"{BASE}{href}"
-                    if BASE not in href or href in seen: continue
-                    skip = ["/photo", "/video-", "/live", "#", "javascript:", "/tag/"]
-                    if any(s in href.lower() for s in skip): continue
-                    t = a.get_text(strip=True)
-                    if not t or len(t) < 12: continue
-                    seen.add(href)
-                    from app.scrapers.content_extractor import extract_article
-                    r = await extract_article(href)
-                    if r.get("success"):
-                        art = ScrapedArticle(title=t, content=r["content"], url=href,
-                                             published_at=r.get("published_at") or datetime.now(timezone.utc),
-                                             image_url=r.get("image_url"), author="TV9 Telugu")
-                        if art.is_valid(): articles.append(art)
-                    await asyncio.sleep(0.3)
-
-        logger.info(f"[TV9] Scraped {len(articles)} articles")
+        
+        # HTML scraping only since RSS feed is not working
+        logger.info(f"[TV9] Starting HTML scrape from {len(HTML_SECTIONS)} sections")
+        for section in HTML_SECTIONS:
+            if len(articles) >= self.max_articles:
+                break
+            
+            section_url = f"{BASE}/{section}"
+            html = await self._fetch_with_retry(section_url)
+            if not html:
+                continue
+            
+            soup = self.parse_html(html)
+            article_links = self._extract_links_from_html(html, seen)
+            
+            logger.info(f"[TV9] Section {section}: found {len(article_links)} articles")
+            
+            for article_data in article_links:
+                if len(articles) >= self.max_articles:
+                    break
+                
+                article = await self._process_html_article(article_data)
+                if article and article.is_valid():
+                    articles.append(article)
+                
+                if not self.sequential_mode:
+                    await asyncio.sleep(self.request_delay)
+            
+            await asyncio.sleep(self.request_delay)
+        
+        logger.info(f"[TV9] Scraped {len(articles)} articles total")
         return articles
 
 ScraperFactory.register("tv9 telugu", TV9TeluguScraper)

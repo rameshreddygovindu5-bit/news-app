@@ -89,7 +89,8 @@ def article_to_response(article, source_name: str = None) -> dict:
         "ai_status": getattr(article, 'ai_status', 'unknown'),
         "is_posted_fb": getattr(article, 'is_posted_fb', False),
         "created_at": article.created_at, "updated_at": article.updated_at,
-        "processed_at": article.processed_at, "source_name": source_name,
+        "processed_at": article.processed_at,
+        "source_name": "Peoples Feedback",  # Always brand as PF — never expose actual source
     }
 
 
@@ -158,7 +159,7 @@ async def list_articles(
 
 
 @router.get("/top-news")
-async def get_top_news(limit: int = Query(100, ge=1, le=200), db: AsyncSession = Depends(get_db)):
+async def get_top_news(limit: int = Query(500, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
     query = select(NewsArticle, NewsSource.name.label("source_name")).join(
         NewsSource, NewsArticle.source_id == NewsSource.id
     ).where(NewsArticle.flag == "Y", NewsArticle.is_duplicate == False
