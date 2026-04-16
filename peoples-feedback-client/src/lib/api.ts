@@ -17,6 +17,16 @@ async function get<T>(path: string, params?: Record<string, any>): Promise<T> {
   return res.json();
 }
 
+async function post<T>(path: string, body?: any): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
 export const newsApi = {
   /** List published articles. Supports category, keyword, pagination. */
   getArticles: (p: { page?: number; page_size?: number; category?: string; keyword?: string; lang?: string }) =>
@@ -52,4 +62,8 @@ export const newsApi = {
   /** Wishes marked for homepage display */
   getHomeWishes: () =>
     get<import('@/types/news').WishItem[]>('/api/wishes/home'),
+
+  /** Like a wish */
+  likeWish: (id: number) =>
+    post<{ success: boolean; likes_count: number }>(`/api/wishes/${id}/like`),
 };

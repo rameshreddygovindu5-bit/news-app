@@ -442,21 +442,26 @@ def sync_to_aws():
                     image_url VARCHAR(1000),
                     is_active BOOLEAN DEFAULT TRUE,
                     display_on_home BOOLEAN DEFAULT FALSE,
+                    likes_count INTEGER DEFAULT 0,
                     created_by VARCHAR(100),
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     expires_at TIMESTAMP WITH TIME ZONE
                 )
             """)
+            # Ensure AWS wishes has likes_count column
+            try: cur.execute("ALTER TABLE wishes ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0;")
+            except Exception: pass
+
             for w in db.query(Wish).all():
                 cur.execute("""
-                    INSERT INTO wishes (id, title, message, wish_type, person_name, occasion_date, image_url, is_active, display_on_home, created_by, created_at, expires_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    INSERT INTO wishes (id, title, message, wish_type, person_name, occasion_date, image_url, is_active, display_on_home, likes_count, created_by, created_at, expires_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (id) DO UPDATE SET
                         title=EXCLUDED.title, message=EXCLUDED.message, wish_type=EXCLUDED.wish_type, 
                         person_name=EXCLUDED.person_name, occasion_date=EXCLUDED.occasion_date, 
                         image_url=EXCLUDED.image_url, is_active=EXCLUDED.is_active, 
-                        display_on_home=EXCLUDED.display_on_home, expires_at=EXCLUDED.expires_at
-                """, (w.id, w.title, w.message, w.wish_type, w.person_name, w.occasion_date, w.image_url, w.is_active, w.display_on_home, w.created_by, w.created_at, w.expires_at))
+                        display_on_home=EXCLUDED.display_on_home, likes_count=EXCLUDED.likes_count, expires_at=EXCLUDED.expires_at
+                """, (w.id, w.title, w.message, w.wish_type, w.person_name, w.occasion_date, w.image_url, w.is_active, w.display_on_home, w.likes_count, w.created_by, w.created_at, w.expires_at))
         except Exception as e:
             logger.error(f"[AWS] Wishes Sync Error: {e}")
 

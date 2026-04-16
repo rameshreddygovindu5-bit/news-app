@@ -220,3 +220,4 @@ class Wish(Base):
     created_by = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True))  # auto-hide after this date
+    likes_count = Column(Integer, default=0)

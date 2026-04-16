@@ -4,14 +4,16 @@
  * Users can view all active wishes with images.
  */
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Gift, Calendar, Heart, Star, PartyPopper } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Gift, Calendar, Heart, Star, PartyPopper, Share2 } from "lucide-react";
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { BackToTop } from "@/components/news/BackToTop";
 import { newsApi } from "@/lib/api";
 import type { WishItem } from "@/types/news";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
+import { ShareBar } from "@/components/news/ShareMenu";
 
 const WISH_TYPES = [
   { key: "all", label: "All", icon: Star },
@@ -26,8 +28,29 @@ const typeColors: Record<string, string> = {
   festival: "from-amber-500 to-orange-500",
   anniversary: "from-red-500 to-pink-500",
   custom: "from-indigo-500 to-purple-500",
-};function WishCard({ wish }: { wish: WishItem }) {
+};
+
+function WishCard({ wish }: { wish: WishItem }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isLiked, setIsLiked] = useState(false);
   const gradient = typeColors[wish.wish_type] || "from-[var(--pf-saffron)] to-[var(--pf-orange)]";
+  
+  const likeMutation = useMutation({
+    mutationFn: () => newsApi.likeWish(wish.id),
+    onSuccess: (data) => {
+      setIsLiked(true);
+      queryClient.setQueryData(["wishes", "all"], (old: any) => {
+        if (!old) return old;
+        return old.map((w: WishItem) => w.id === wish.id ? { ...w, likes_count: data.likes_count } : w);
+      });
+      toast({
+        title: "Celebrated!",
+        description: "Your wish has been shared with the community.",
+      });
+    },
+  });
+
   const fmtDate = (d?: string) => {
     if (!d) return "";
     try {
@@ -102,14 +125,37 @@ const typeColors: Record<string, string> = {
           </div>
         )}
 
-        <div className="mt-auto pt-6 border-t border-zinc-100 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[12px] font-extrabold text-zinc-400 uppercase tracking-tighter">
-            <Calendar className="w-4 h-4 text-[var(--pf-saffron)]" />
-            {wish.occasion_date ? fmtDate(wish.occasion_date) : fmtDate(wish.created_at)}
+        <div className="mt-auto pt-6 border-t border-zinc-100 flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[12px] font-extrabold text-zinc-400 uppercase tracking-tighter">
+              <Calendar className="w-4 h-4 text-[var(--pf-saffron)]" />
+              {wish.occasion_date ? fmtDate(wish.occasion_date) : fmtDate(wish.created_at)}
+            </div>
+            <motion.div 
+               whileTap={{ scale: 0.9 }}
+               onClick={() => !isLiked && likeMutation.mutate()}
+               className={`flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer transition-all duration-300 group/heart ${
+                 isLiked ? 'bg-rose-500 text-white shadow-lg' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'
+               }`}
+            >
+              <Heart className={`w-4 h-4 transition-colors ${isLiked ? 'fill-white' : 'fill-none group-hover/heart:fill-rose-500'}`} />
+              <span className="text-xs font-black">{wish.likes_count || 0}</span>
+              {!isLiked && <span className="text-[10px] font-bold uppercase ml-1 opacity-0 group-hover/heart:opacity-100 transition-opacity">Celebrate</span>}
+            </motion.div>
           </div>
-          <div className="flex items-center gap-1 bg-rose-50 px-3 py-1.5 rounded-full group/heart cursor-pointer">
-            <span className="text-[10px] font-black text-rose-500 uppercase">Celebrate</span>
-            <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20 group-hover/heart:fill-rose-500 transition-all duration-300 transform group-hover/heart:scale-125" />
+
+          <div className="flex items-center justify-between bg-zinc-50 rounded-2xl p-3 border border-zinc-100 hover:border-zinc-200 transition-colors">
+            <div className="flex items-center gap-1.5 px-1">
+              <Share2 className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Share Joy</span>
+            </div>
+            <ShareBar 
+              data={{ 
+                title: wish.title, 
+                text: wish.message || wish.title, 
+                url: `${window.location.origin}/wishes?id=${wish.id}` 
+              }} 
+            />
           </div>
         </div>
       </div>

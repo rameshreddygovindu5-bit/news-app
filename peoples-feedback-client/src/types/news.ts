@@ -162,6 +162,7 @@ export interface WishItem {
   image_url?: string;
   is_active: boolean;
   display_on_home: boolean;
+  likes_count: number;
   created_by?: string;
   created_at: string;
   expires_at?: string;

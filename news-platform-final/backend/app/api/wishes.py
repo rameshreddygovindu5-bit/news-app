@@ -56,6 +56,7 @@ class WishResponse(BaseModel):
     created_by: Optional[str] = None
     created_at: datetime
     expires_at: Optional[datetime] = None
+    likes_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -97,6 +98,24 @@ async def get_home_wishes(db: AsyncSession = Depends(get_db)):
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.post("/{wish_id}/like", response_model=WishResponse)
+async def like_wish(wish_id: int, db: AsyncSession = Depends(get_db)):
+    """Public: Heart/Like a wish."""
+    query = select(Wish).where(Wish.id == wish_id)
+    result = await db.execute(query)
+    wish = result.scalar_one_or_none()
+    
+    if not wish:
+        raise HTTPException(status_code=404, detail="Wish not found")
+
+    wish.likes_count = (wish.likes_count or 0) + 1
+    await db.commit()
+    await db.refresh(wish)
+    
+    logger.info(f"[WISH] Liked: {wish_id}. New count: {wish.likes_count}")
+    return wish
 
 
 # ── Admin Endpoints ──────────────────────────────────────────────────
