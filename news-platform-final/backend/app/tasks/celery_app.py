@@ -415,18 +415,42 @@ def sync_to_aws():
             except Exception: pass
 
         # 2. Categories
-        for c in db.query(Category).all():
+        local_cats = db.query(Category).all()
+        local_cat_names = [c.name for c in local_cats]
+        for c in local_cats:
             try:
-                cur.execute("INSERT INTO categories (name,slug,description,article_count) VALUES (%s,%s,%s,%s) ON CONFLICT (name) DO UPDATE SET description=EXCLUDED.description,article_count=EXCLUDED.article_count",
-                            (c.name, c.slug, c.description, c.article_count))
+                cur.execute("INSERT INTO categories (name,slug,description,is_active,article_count) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (name) DO UPDATE SET description=EXCLUDED.description,is_active=EXCLUDED.is_active,article_count=EXCLUDED.article_count",
+                            (c.name, c.slug, c.description, c.is_active, c.article_count))
             except Exception as e: logger.warning(f"[AWS] Cat {c.name}: {e}")
+        # Deactivate categories in AWS that are missing locally
+        if local_cat_names:
+            try: cur.execute("UPDATE categories SET is_active=FALSE WHERE name NOT IN %s", (tuple(local_cat_names),))
+            except Exception: pass
 
         # 3. Sources
-        for s in db.query(NewsSource).all():
+        local_sources = db.query(NewsSource).all()
+        local_src_ids = [s.id for s in local_sources]
+        enabled_local_ids = [s.id for s in local_sources if s.is_enabled]
+        
+        for s in local_sources:
             try:
                 cur.execute("INSERT INTO news_sources (id,name,url,scraper_type,language,is_enabled,credibility_score,priority) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,url=EXCLUDED.url,is_enabled=EXCLUDED.is_enabled,credibility_score=EXCLUDED.credibility_score,priority=EXCLUDED.priority",
                             (s.id,s.name,s.url,s.scraper_type,s.language,s.is_enabled,s.credibility_score,s.priority))
             except Exception as e: logger.warning(f"[AWS] Src {s.id}: {e}")
+        
+        # Pruning AWS data based on local source states
+        try:
+            # 1. Disable sources in AWS that are missing locally
+            if local_src_ids:
+                cur.execute("UPDATE news_sources SET is_enabled=FALSE WHERE id NOT IN %s", (tuple(local_src_ids),))
+            
+            # 2. Deactivate articles in AWS from sources that are NOT enabled locally
+            if enabled_local_ids:
+                cur.execute("UPDATE news_articles SET flag='D' WHERE source_id NOT IN %s AND flag != 'D'", (tuple(enabled_local_ids),))
+            elif local_src_ids: # All sources disabled
+                cur.execute("UPDATE news_articles SET flag='D' WHERE flag != 'D'")
+        except Exception as e:
+            logger.error(f"[AWS] Pruning Error: {e}")
 
         # 4. Wishes
         try:
@@ -452,7 +476,9 @@ def sync_to_aws():
             try: cur.execute("ALTER TABLE wishes ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0;")
             except Exception: pass
 
-            for w in db.query(Wish).all():
+            local_wishes = db.query(Wish).all()
+            local_wish_ids = [w.id for w in local_wishes]
+            for w in local_wishes:
                 cur.execute("""
                     INSERT INTO wishes (id, title, message, wish_type, person_name, occasion_date, image_url, is_active, display_on_home, likes_count, created_by, created_at, expires_at)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
@@ -462,10 +488,14 @@ def sync_to_aws():
                         image_url=EXCLUDED.image_url, is_active=EXCLUDED.is_active, 
                         display_on_home=EXCLUDED.display_on_home, likes_count=EXCLUDED.likes_count, expires_at=EXCLUDED.expires_at
                 """, (w.id, w.title, w.message, w.wish_type, w.person_name, w.occasion_date, w.image_url, w.is_active, w.display_on_home, w.likes_count, w.created_by, w.created_at, w.expires_at))
+            
+            # Deactivate wishes in AWS that are missing locally
+            if local_wish_ids:
+                cur.execute("UPDATE wishes SET is_active=FALSE WHERE id NOT IN %s", (tuple(local_wish_ids),))
         except Exception as e:
             logger.error(f"[AWS] Wishes Sync Error: {e}")
 
-        # 4. Articles (delta)
+        # 5. Articles (delta)
         meta = db.query(SyncMetadata).filter(SyncMetadata.target=="AWS_PROD").first()
         if not meta:
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
@@ -478,6 +508,7 @@ def sync_to_aws():
 
         ok = err = 0
         sync_at = datetime.now(timezone.utc)
+        import json
         SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,created_at,updated_at)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                  ON CONFLICT (original_url) DO UPDATE SET
@@ -487,16 +518,38 @@ def sync_to_aws():
                    image_url=EXCLUDED.image_url, rank_score=EXCLUDED.rank_score, updated_at=EXCLUDED.updated_at"""
         for art in records:
             try:
+                # Type conversions for Postgres
+                tags = art.tags
+                if tags and isinstance(tags, str):
+                    try: tags = json.loads(tags)
+                    except: tags = []
+                elif not tags:
+                    tags = []
+                
                 cur.execute(SQL, (
                     art.source_id, art.original_title, art.original_content, art.original_url,
                     art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
-                    art.category, art.slug, art.tags, art.flag, art.image_url, art.author,
-                    art.content_hash, art.is_duplicate, art.duplicate_of_id, art.rank_score,
+                    art.category, art.slug, tags, art.flag, art.image_url, art.author,
+                    art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
                     getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
                     art.created_at, art.updated_at,
                 ))
                 ok += 1
             except Exception as e:
+                # If slug collision on a new URL, try appending suffix
+                if "slug" in str(e).lower() and "unique" in str(e).lower():
+                    try:
+                        new_slug = f"{art.slug}-{uuid.uuid4().hex[:4]}"
+                        cur.execute(SQL, (
+                            art.source_id, art.original_title, art.original_content, art.original_url,
+                            art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
+                            art.category, new_slug, tags, art.flag, art.image_url, art.author,
+                            art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
+                            getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                            art.created_at, art.updated_at,
+                        ))
+                        ok += 1; continue
+                    except: pass
                 logger.error(f"[AWS] Art {art.id}: {e}"); err += 1
 
         cur.close(); conn.close()
@@ -507,6 +560,7 @@ def sync_to_aws():
         logger.error(f"[AWS] Fatal: {e}"); complete_job(db, log, 0, 0, str(e))
     finally:
         db.close()
+    _banner("AWS SYNC", False)
     _banner("AWS SYNC", False)
 
 # ── TASK 5: CATEGORY COUNTS ───────────────────────────────────────────

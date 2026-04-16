@@ -404,6 +404,13 @@ async def delete_article(article_id: int, db: AsyncSession = Depends(get_db), ad
     article.flag = "D"
     article.deleted_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # Trigger AWS sync immediately after deletion
+    from app.tasks.celery_app import sync_to_aws
+    try:
+        sync_to_aws.delay()
+    except: pass
+
     return {"message": "Article deleted (soft)", "id": article_id}
 
 

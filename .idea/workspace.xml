@@ -6,12 +6,10 @@
   <component name="ChangeListManager">
     <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="committed v2 changes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/services/ai_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/services/ai_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/App.js" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/App.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/styles/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/styles/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/lib/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/lib/api.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Wishes.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Wishes.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/types/news.ts" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/types/news.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/categories.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/categories.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/sources.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/sources.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/wishes.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/wishes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -137,7 +135,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776345937289</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="committed v2 changes">
+      <option name="closed" value="true" />
+      <created>1776355046101</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1776355046101</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

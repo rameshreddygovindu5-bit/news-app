@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.models import Category, AdminUser
 from app.schemas.schemas import CategoryResponse, CategoryCreate
 from app.services.auth_service import get_current_user
+from app.tasks.celery_app import sync_to_aws
 
 router = APIRouter(prefix="/api/categories", tags=["Categories"])
 
@@ -31,6 +32,9 @@ async def create_category(
     db.add(cat)
     await db.commit()
     await db.refresh(cat)
+    try:
+        sync_to_aws.delay()
+    except: pass
     return cat
 
 
@@ -46,4 +50,7 @@ async def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
     cat.is_active = False
     await db.commit()
+    try:
+        sync_to_aws.delay()
+    except: pass
     return {"message": f"Category '{cat.name}' deactivated"}

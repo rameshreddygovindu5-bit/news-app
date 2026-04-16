@@ -11,6 +11,7 @@ from app.schemas.schemas import (
     NewsSourceCreate, NewsSourceUpdate, NewsSourceResponse
 )
 from app.services.auth_service import get_current_user
+from app.tasks.celery_app import sync_to_aws
 
 router = APIRouter(prefix="/api/sources", tags=["News Sources"])
 
@@ -44,6 +45,9 @@ async def create_source(
     db.add(source)
     await db.commit()
     await db.refresh(source)
+    try:
+        sync_to_aws.delay()
+    except: pass
     return source
 
 
@@ -67,6 +71,9 @@ async def update_source(
 
     await db.commit()
     await db.refresh(source)
+    try:
+        sync_to_aws.delay()
+    except: pass
     return source
 
 
@@ -85,6 +92,9 @@ async def delete_source(
 
     await db.delete(source)
     await db.commit()
+    try:
+        sync_to_aws.delay()
+    except: pass
     return {"message": f"Source '{source.name}' deleted"}
 
 
@@ -103,6 +113,9 @@ async def toggle_pause(
 
     source.is_paused = not source.is_paused
     await db.commit()
+    try:
+        sync_to_aws.delay()
+    except: pass
     return {"message": f"Source {'paused' if source.is_paused else 'resumed'}", "is_paused": source.is_paused}
 
 
@@ -121,6 +134,9 @@ async def toggle_enable(
 
     source.is_enabled = not source.is_enabled
     await db.commit()
+    try:
+        sync_to_aws.delay()
+    except: pass
     return {"message": f"Source {'enabled' if source.is_enabled else 'disabled'}", "is_enabled": source.is_enabled}
 
 

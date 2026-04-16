@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.models import Wish, AdminUser
 from app.services.auth_service import get_current_user, require_admin
+from app.tasks.celery_app import sync_to_aws
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,9 @@ async def create_wish(
     await db.commit()
     await db.refresh(wish)
     logger.info(f"[WISH] Created: '{data.title}' by {user.username}")
+    try:
+        sync_to_aws.delay()
+    except: pass
     return wish
 
 
@@ -177,6 +181,9 @@ async def update_wish(
 
     await db.commit()
     await db.refresh(wish)
+    try:
+        sync_to_aws.delay()
+    except: pass
     return wish
 
 
@@ -193,4 +200,7 @@ async def delete_wish(
 
     wish.is_active = False
     await db.commit()
+    try:
+        sync_to_aws.delay()
+    except: pass
     return {"message": f"Wish '{wish.title}' deactivated", "id": wish_id}
