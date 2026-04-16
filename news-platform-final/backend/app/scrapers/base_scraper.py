@@ -47,8 +47,11 @@ class ScrapedArticle:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def is_valid(self) -> bool:
-        """Check if article has minimum required data."""
-        return bool(self.title and len(self.title) > 5)
+        """Check if article has minimum required data (Title + Content)."""
+        return bool(
+            self.title and len(self.title) > 10 and
+            self.content and len(self.content) > 80
+        )
 
 
 class BaseScraper(ABC):

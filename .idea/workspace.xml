@@ -6,8 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="committed v2 changes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/NewsLayout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/api/articles.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/api/articles.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/scrapers/base_scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/scrapers/base_scraper.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/tasks/celery_app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Wishes.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Wishes.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,7 +53,7 @@
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Ramesh/news-web-app&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Ramesh/news-app/04152026&quot;,
     &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
     &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
     &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;
@@ -109,7 +112,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776202410228</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="committed v2 changes">
+      <option name="closed" value="true" />
+      <created>1776285443898</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1776285443898</updated>
+    </task>
+    <task id="LOCAL-00003" summary="committed v2 changes">
+      <option name="closed" value="true" />
+      <created>1776301462623</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1776301462623</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

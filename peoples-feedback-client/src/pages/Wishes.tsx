@@ -11,6 +11,7 @@ import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { BackToTop } from "@/components/news/BackToTop";
 import { newsApi } from "@/lib/api";
 import type { WishItem } from "@/types/news";
+import { motion, AnimatePresence } from "framer-motion";
 
 const WISH_TYPES = [
   { key: "all", label: "All", icon: Star },
@@ -25,9 +26,7 @@ const typeColors: Record<string, string> = {
   festival: "from-amber-500 to-orange-500",
   anniversary: "from-red-500 to-pink-500",
   custom: "from-indigo-500 to-purple-500",
-};
-
-function WishCard({ wish }: { wish: WishItem }) {
+};function WishCard({ wish }: { wish: WishItem }) {
   const gradient = typeColors[wish.wish_type] || "from-[var(--pf-saffron)] to-[var(--pf-orange)]";
   const fmtDate = (d?: string) => {
     if (!d) return "";
@@ -37,57 +36,81 @@ function WishCard({ wish }: { wish: WishItem }) {
   };
 
   return (
-    <div className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-      {/* Image */}
+    <div className="group bg-white rounded-3xl shadow-xl border border-white overflow-hidden hover:shadow-2xl transition-all duration-500 flex flex-col h-full relative">
+      {/* Decorative border gradient */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-500 pointer-events-none`} />
+      
+      {/* Image / Header Section */}
       {wish.image_url ? (
-        <div className="aspect-[4/3] relative overflow-hidden">
+        <div className="aspect-video relative overflow-hidden">
           <img
             src={wish.image_url}
             alt={wish.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-          <span className={`absolute top-3 left-3 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white rounded-full bg-gradient-to-r ${gradient} shadow-lg`}>
-            {wish.wish_type}
-          </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          <div className="absolute top-4 left-4">
+            <span className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white rounded-full bg-gradient-to-r ${gradient} shadow-2xl ring-2 ring-white/30 backdrop-blur-sm`}>
+              {wish.wish_type}
+            </span>
+          </div>
         </div>
       ) : (
-        <div className={`aspect-[4/3] bg-gradient-to-br ${gradient} flex items-center justify-center relative`}>
-          <Gift className="w-16 h-16 text-white/30" />
-          <span className="absolute top-3 left-3 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-white/20 backdrop-blur-sm rounded-full">
-            {wish.wish_type}
-          </span>
+        <div className={`aspect-video bg-gradient-to-br ${gradient} flex items-center justify-center relative overflow-hidden`}>
+          <div className="absolute inset-0 opacity-20">
+             <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
+          </div>
+          <Gift className="w-24 h-24 text-white/30 animate-pulse relative z-10" />
+          <div className="absolute inset-0 pointer-events-none">
+             {[...Array(8)].map((_, i) => (
+               <Star key={i} className={`absolute text-white/40 w-5 h-5 animate-ping`} style={{ top: `${Math.random()*100}%`, left: `${Math.random()*100}%`, animationDelay: `${i*0.4}s` }} />
+             ))}
+          </div>
+          <div className="absolute top-4 left-4">
+            <span className="px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white bg-white/20 backdrop-blur-md rounded-full shadow-lg ring-1 ring-white/30">
+              {wish.wish_type}
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Content */}
-      <div className="p-5">
-        <h3 className="text-lg font-black text-zinc-900 mb-2 leading-tight group-hover:text-[var(--pf-saffron)] transition-colors">
+      {/* Content Section */}
+      <div className="p-8 flex-grow flex flex-col relative z-20">
+        <h3 className="text-2xl font-black text-zinc-900 mb-4 leading-tight group-hover:text-[var(--pf-navy)] transition-colors" style={{ fontFamily: 'var(--font-headline)' }}>
           {wish.title}
         </h3>
+        
         {wish.person_name && (
-          <p className="text-sm font-bold text-[var(--pf-navy)] mb-2 flex items-center gap-1.5">
-            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-            {wish.person_name}
-          </p>
+          <div className="flex items-center gap-3 mb-6 bg-zinc-50 p-3 rounded-2xl border border-zinc-100">
+            <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-sm font-black shadow-lg ring-2 ring-white`}>
+              {wish.person_name.charAt(0)}
+            </div>
+            <div className="flex flex-col">
+               <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">From</span>
+               <span className="text-md font-extrabold text-[var(--pf-navy)] tracking-tight">
+                {wish.person_name}
+               </span>
+            </div>
+          </div>
         )}
+
         {wish.message && (
-          <p className="text-sm text-zinc-500 leading-relaxed line-clamp-3 mb-3">
-            {wish.message}
-          </p>
+          <div className="relative">
+            <p className="text-[17px] text-zinc-700 leading-relaxed font-semibold mb-6 whitespace-pre-wrap selection:bg-[var(--pf-saffron)] selection:text-white">
+              {wish.message}
+            </p>
+          </div>
         )}
-        <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider pt-3 border-t border-gray-100">
-          {wish.occasion_date ? (
-            <span className="flex items-center gap-1.5">
-              <Calendar className="w-3 h-3" />
-              {fmtDate(wish.occasion_date)}
-            </span>
-          ) : (
-            <span>{fmtDate(wish.created_at)}</span>
-          )}
-          <span className={`px-2 py-0.5 rounded-full bg-gradient-to-r ${gradient} text-white`}>
-            {wish.wish_type}
-          </span>
+
+        <div className="mt-auto pt-6 border-t border-zinc-100 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[12px] font-extrabold text-zinc-400 uppercase tracking-tighter">
+            <Calendar className="w-4 h-4 text-[var(--pf-saffron)]" />
+            {wish.occasion_date ? fmtDate(wish.occasion_date) : fmtDate(wish.created_at)}
+          </div>
+          <div className="flex items-center gap-1 bg-rose-50 px-3 py-1.5 rounded-full group/heart cursor-pointer">
+            <span className="text-[10px] font-black text-rose-500 uppercase">Celebrate</span>
+            <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20 group-hover/heart:fill-rose-500 transition-all duration-300 transform group-hover/heart:scale-125" />
+          </div>
         </div>
       </div>
     </div>
@@ -106,7 +129,7 @@ export default function WishesPage() {
   });
 
   return (
-    <div className="min-h-screen bg-tricolor-light text-zinc-900">
+    <div className="min-h-screen bg-white text-zinc-900 overflow-x-hidden">
       <PremiumHeader
         selectedCategory={cat}
         onCategoryChange={setCat}
@@ -114,37 +137,49 @@ export default function WishesPage() {
         onSearchChange={setSearch}
       />
 
-      {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-[var(--pf-navy)] via-[#1a237e] to-[var(--pf-navy)] text-white py-12 px-4 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-10 left-10 w-32 h-32 bg-[var(--pf-saffron)] rounded-full blur-3xl" />
-          <div className="absolute bottom-10 right-10 w-32 h-32 bg-[var(--pf-green)] rounded-full blur-3xl" />
+      {/* Hero Banner with Celebration Elements */}
+      <div className="nav-india text-white py-20 px-4 relative overflow-hidden">
+        <div className="absolute inset-0">
+           <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/fancy-pants.png')]" />
+           <motion.div animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-20 -right-20 w-96 h-96 bg-[var(--pf-saffron)] rounded-full blur-[120px] opacity-30" />
+           <motion.div animate={{ rotate: -360 }} transition={{ duration: 15, repeat: Infinity, ease: "linear" }} className="absolute -bottom-20 -left-20 w-96 h-96 bg-[var(--pf-green)] rounded-full blur-[120px] opacity-20" />
         </div>
+        
         <div className="max-w-5xl mx-auto text-center relative z-10">
-          <div className="tricolor-stripe rounded-full w-24 mx-auto mb-6" />
-          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tight mb-3" style={{ fontFamily: "var(--font-headline)" }}>
-            Wishes & Greetings
-          </h1>
-          <p className="text-white/70 text-lg max-w-xl mx-auto">
-            Celebrate special moments with heartfelt wishes from the Peoples Feedback community.
-          </p>
+          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="tricolor-stripe rounded-full w-32 mx-auto mb-8 h-1.5 shadow-lg" />
+          <motion.h1 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="text-5xl md:text-8xl font-black uppercase tracking-tighter mb-6 drop-shadow-2xl" 
+            style={{ fontFamily: "var(--font-headline)" }}
+          >
+            Wishes & <br className="md:hidden" /><span className="text-India">Greetings</span>
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            transition={{ delay: 0.3 }}
+            className="text-white/80 text-xl md:text-2xl font-medium max-w-2xl mx-auto leading-relaxed"
+          >
+            Join the Peoples Feedback community in celebrating special milestones and heartwarming wishes.
+          </motion.p>
         </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
+      <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-30">
+        <div className="bg-white p-3 rounded-full shadow-2xl border border-gray-100 flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
           {WISH_TYPES.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setFilter(key)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-8 py-3.5 rounded-full text-sm font-black whitespace-nowrap transition-all duration-300 ${
                 filter === key
-                  ? "bg-[var(--pf-navy)] text-white shadow-lg"
-                  : "bg-white text-zinc-600 border border-gray-200 hover:border-[var(--pf-saffron)] hover:text-[var(--pf-saffron)]"
+                  ? "bg-[var(--pf-navy)] text-white shadow-xl scale-105"
+                  : "text-zinc-500 hover:text-[var(--pf-saffron)] hover:bg-zinc-50"
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${filter === key ? 'text-[var(--pf-saffron)]' : ''}`} />
               {label}
             </button>
           ))}
@@ -152,32 +187,48 @@ export default function WishesPage() {
       </div>
 
       {/* Wishes Grid */}
-      <main className="max-w-7xl mx-auto px-4 pb-16">
+      <main className="max-w-7xl mx-auto px-4 py-20">
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl overflow-hidden">
-                <div className="aspect-[4/3] skeleton" />
-                <div className="p-5 space-y-3">
-                  <div className="skeleton h-5 w-3/4 rounded" />
-                  <div className="skeleton h-4 w-full rounded" />
-                  <div className="skeleton h-4 w-2/3 rounded" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-10">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-3xl overflow-hidden shadow-sm h-[400px]">
+                <div className="aspect-video skeleton" />
+                <div className="p-8 space-y-4">
+                  <div className="skeleton h-8 w-3/4 rounded-xl" />
+                  <div className="skeleton h-4 w-full rounded-lg" />
+                  <div className="skeleton h-4 w-2/3 rounded-lg" />
                 </div>
               </div>
             ))}
           </div>
         ) : !wishes?.length ? (
-          <div className="text-center py-20">
-            <Gift className="w-16 h-16 text-zinc-200 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-zinc-400 mb-2">No wishes yet</h3>
-            <p className="text-zinc-300">Check back soon for greetings and celebrations!</p>
+          <div className="text-center py-32 bg-zinc-50 rounded-[40px] border-2 border-dashed border-zinc-200">
+            <div className="relative inline-block">
+               <Gift className="w-24 h-24 text-zinc-200 mx-auto mb-6" />
+               <Star className="absolute -top-2 -right-2 w-8 h-8 text-[var(--pf-saffron)]/20 animate-spin" />
+            </div>
+            <h3 className="text-3xl font-black text-zinc-400 mb-4">No wishes found</h3>
+            <p className="text-zinc-300 text-lg">We haven't shared any greetings lately. Stay tuned!</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {wishes.map((wish) => (
-              <WishCard key={wish.id} wish={wish} />
-            ))}
-          </div>
+          <motion.div 
+            layout
+            className={`grid grid-cols-1 md:grid-cols-1 ${wishes.length > 1 ? 'lg:grid-cols-2' : 'lg:grid-cols-1 max-w-3xl mx-auto'} gap-12`}
+          >
+            <AnimatePresence mode="popLayout">
+              {wishes.map((wish) => (
+                <motion.div
+                  key={wish.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                >
+                  <WishCard wish={wish} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </main>
 

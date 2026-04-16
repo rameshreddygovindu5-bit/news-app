@@ -90,7 +90,7 @@ def article_to_response(article, source_name: str = None) -> dict:
         "is_posted_fb": getattr(article, 'is_posted_fb', False),
         "created_at": article.created_at, "updated_at": article.updated_at,
         "processed_at": article.processed_at,
-        "source_name": "Peoples Feedback",  # Always brand as PF — never expose actual source
+        "source_name": source_name or "Peoples Feedback",
     }
 
 

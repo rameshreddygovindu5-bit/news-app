@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.database import SyncSessionLocal
 from app.models.models import (
     NewsSource, NewsArticle, Category, JobExecutionLog,
-    PostErrorLog, SyncMetadata, SourceErrorLog,
+    PostErrorLog, SyncMetadata, SourceErrorLog, Wish,
 )
 from app.scrapers.base_scraper import ScraperFactory
 from app.services.ai_service import ai_service
@@ -106,7 +106,13 @@ def complete_job(db, log, ok, err, error_summary=None):
     status = "DONE" if err==0 else ("PARTIAL" if ok>0 else "FAILED")
     log.status=status; log.rows_ok=ok; log.rows_err=err
     log.error_summary=error_summary; log.ended_at=datetime.now(timezone.utc)
-    log.duration_s=(log.ended_at-log.started_at).total_seconds()
+    
+    # Ensure aware comparison
+    start = log.started_at; end = log.ended_at
+    if start and start.tzinfo is None: start = start.replace(tzinfo=timezone.utc)
+    if end and end.tzinfo is None: end = end.replace(tzinfo=timezone.utc)
+    
+    log.duration_s=(end-start).total_seconds()
     db.commit()
     logger.info(f"[JOB] {log.job_name} → {status} (ok={ok} err={err} {log.duration_s:.1f}s)")
 
@@ -178,7 +184,11 @@ def worker_scrape_source(source_id: int, run_id: str) -> Dict:
             # Strip source names from content before storage
             from app.services.ai_service import _strip_source_names
             clean_title = _strip_source_names(a.title).strip()
-            clean_content = _strip_source_names(a.content or a.title).strip()
+            clean_content = _strip_source_names(a.content).strip()
+            
+            if not clean_content or len(clean_content) < 80:
+                logger.warning(f"[SCRAPE] Skipping {src.name} article (insufficient content): {clean_title[:50]}")
+                continue
             
             ch = content_hash(source_id, clean_title)
             if db.query(NewsArticle.id).filter(NewsArticle.content_hash==ch).first():
@@ -201,8 +211,8 @@ def worker_scrape_source(source_id: int, run_id: str) -> Dict:
                 published_at=a.published_at or datetime.now(timezone.utc),
                 image_url=a.image_url, content_hash=ch,
                 is_duplicate=is_dup, duplicate_of_id=dup_id,
-                flag="A", ai_status="pending",
-                rephrased_title=clean_title, rephrased_content=clean_content or clean_title,
+                flag="N", ai_status="pending",
+                rephrased_title=clean_title, rephrased_content=clean_content,
                 category="Home", slug=slug,
             )
             db.add(new_art); db.commit(); stats["inserted"] += 1
@@ -297,14 +307,23 @@ def update_top_100_ranking():
                 NewsArticle.ai_status=="completed",
                 NewsArticle.is_duplicate==False,
             ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()
+            logger.info(f"[RANK] Fallback candidates: {len(candidates)}")
 
         if not candidates:
+            logger.warning("[RANK] No candidates found even in fallback!")
             complete_job(db, log, 0, 0, "No candidates"); return
+
+        logger.info(f"[RANK] Scoring {len(candidates)} candidates")
 
         # Score
         now = datetime.now(timezone.utc)
         for a in candidates:
-            age_h = (now - a.created_at).total_seconds() / 3600
+            # Handle naive datetime from SQLite or other sources
+            cat = a.created_at
+            if cat.tzinfo is None:
+                cat = cat.replace(tzinfo=timezone.utc)
+            
+            age_h = (now - cat).total_seconds() / 3600
             a.rank_score = (a.source.priority*15) + (a.source.credibility_score*25) + max(0, 100-(0.4*age_h))
         db.commit()
 
@@ -408,6 +427,38 @@ def sync_to_aws():
                 cur.execute("INSERT INTO news_sources (id,name,url,scraper_type,language,is_enabled,credibility_score,priority) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,url=EXCLUDED.url,is_enabled=EXCLUDED.is_enabled,credibility_score=EXCLUDED.credibility_score,priority=EXCLUDED.priority",
                             (s.id,s.name,s.url,s.scraper_type,s.language,s.is_enabled,s.credibility_score,s.priority))
             except Exception as e: logger.warning(f"[AWS] Src {s.id}: {e}")
+
+        # 4. Wishes
+        try:
+            # Ensure table exists in AWS
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS wishes (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(500) NOT NULL,
+                    message TEXT,
+                    wish_type VARCHAR(50) DEFAULT 'birthday',
+                    person_name VARCHAR(255),
+                    occasion_date TIMESTAMP WITH TIME ZONE,
+                    image_url VARCHAR(1000),
+                    is_active BOOLEAN DEFAULT TRUE,
+                    display_on_home BOOLEAN DEFAULT FALSE,
+                    created_by VARCHAR(100),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP WITH TIME ZONE
+                )
+            """)
+            for w in db.query(Wish).all():
+                cur.execute("""
+                    INSERT INTO wishes (id, title, message, wish_type, person_name, occasion_date, image_url, is_active, display_on_home, created_by, created_at, expires_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        title=EXCLUDED.title, message=EXCLUDED.message, wish_type=EXCLUDED.wish_type, 
+                        person_name=EXCLUDED.person_name, occasion_date=EXCLUDED.occasion_date, 
+                        image_url=EXCLUDED.image_url, is_active=EXCLUDED.is_active, 
+                        display_on_home=EXCLUDED.display_on_home, expires_at=EXCLUDED.expires_at
+                """, (w.id, w.title, w.message, w.wish_type, w.person_name, w.occasion_date, w.image_url, w.is_active, w.display_on_home, w.created_by, w.created_at, w.expires_at))
+        except Exception as e:
+            logger.error(f"[AWS] Wishes Sync Error: {e}")
 
         # 4. Articles (delta)
         meta = db.query(SyncMetadata).filter(SyncMetadata.target=="AWS_PROD").first()
