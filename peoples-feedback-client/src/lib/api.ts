@@ -3,7 +3,8 @@
  * Synced with news-platform-final backend schema.
  * Public endpoints only. Always filters flag=A,Y.
  */
-const BASE = (import.meta as any)?.env?.VITE_API_URL || '';
+export const API_BASE = (import.meta as any)?.env?.VITE_API_URL || '';
+const BASE = API_BASE;
 
 async function get<T>(path: string, params?: Record<string, any>): Promise<T> {
   const url = new URL(path, BASE || window.location.origin);

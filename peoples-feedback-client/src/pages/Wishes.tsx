@@ -9,7 +9,7 @@ import { Gift, Calendar, Heart, Star, PartyPopper, Share2 } from "lucide-react";
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { BackToTop } from "@/components/news/BackToTop";
-import { newsApi } from "@/lib/api";
+import { newsApi, API_BASE } from "@/lib/api";
 import type { WishItem } from "@/types/news";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -67,7 +67,7 @@ function WishCard({ wish }: { wish: WishItem }) {
       {wish.image_url ? (
         <div className="aspect-video relative overflow-hidden">
           <img
-            src={wish.image_url}
+            src={wish.image_url.startsWith('/uploads') ? `${API_BASE.replace(/\/$/, '')}${wish.image_url}` : wish.image_url}
             alt={wish.title}
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
           />

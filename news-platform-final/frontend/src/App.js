@@ -96,7 +96,14 @@ const CAT_LOGOS = {
   surveys: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&q=80',
   polls: 'https://images.unsplash.com/photo-1540910419892-4a39d20b2944?w=400&q=80',
 };
-const getImg = (u, c) => u || CAT_LOGOS[(c||'').toLowerCase().trim()] || CAT_LOGOS.home;
+const getImg = (u, c) => {
+  if (!u) return CAT_LOGOS[(c||'').toLowerCase().trim()] || CAT_LOGOS.home;
+  if (u.startsWith('/uploads')) {
+    const base = (process.env.REACT_APP_API_URL || '').replace(/\/$/, '');
+    return `${base}${u}`;
+  }
+  return u;
+};
 
 // ─── Sidebar ──────────────────────────────────────────────────────────
 function Sidebar({onLogout}) {
@@ -305,9 +312,10 @@ function ArticleDetailModal({article:a,onClose}) {
           <div style={{background:'var(--bg-input)',padding:14,borderRadius:8,border:'1px solid var(--accent-dim)'}}>
             <div style={{fontSize:11,color:'var(--accent)',textTransform:'uppercase',marginBottom:8,fontWeight:600}}>{lang==='te'?'Telugu Version':'AI Rephrased'}</div>
             <img src={getImg(a.image_url, a.category)} alt="" style={{width:'100%',borderRadius:4,marginBottom:10,maxHeight:140,objectFit:'cover'}}/>
-            <h4 style={{fontSize:14,marginBottom:10,lineHeight:1.4,color:'var(--accent)'}}
+            <h4 style={{fontSize:16,marginBottom:10,lineHeight:1.4,color:'var(--accent)'}}
+              className={lang==='te'?'telugu-text':''}
               dangerouslySetInnerHTML={{__html:lang==='te'?(a.telugu_title||a.rephrased_title||a.original_title):(a.rephrased_title||a.original_title)}}/>
-            <div style={{fontSize:12,color:'var(--text-secondary)',lineHeight:1.7,maxHeight:250,overflowY:'auto'}}
+            <div className={`news-premium-content ${lang==='te'?'telugu-text':''}`} style={{maxHeight:350,overflowY:'auto'}}
               dangerouslySetInnerHTML={{__html:lang==='te'?(a.telugu_content||a.rephrased_content||'Not translated yet'):(a.rephrased_content||'Not processed yet')}}/>
           </div>
         </div>
@@ -442,9 +450,9 @@ function EditModal({article:a,onClose,onDone}) {
       <h3>Edit #{a.id}</h3>
       <div className="form-group"><label>Original Title</label><input className="form-input" value={f.original_title} onChange={e=>setF({...f,original_title:e.target.value})}/></div>
       <div className="form-group"><label>Rephrased Title</label><input className="form-input" value={f.rephrased_title} onChange={e=>setF({...f,rephrased_title:e.target.value})}/></div>
-      <div className="form-group"><label>Telugu Title</label><input className="form-input" style={{fontFamily:'Noto Sans Telugu,sans-serif'}} value={f.telugu_title} onChange={e=>setF({...f,telugu_title:e.target.value})}/></div>
+      <div className="form-group"><label>Telugu Title</label><input className="form-input telugu-text" value={f.telugu_title} onChange={e=>setF({...f,telugu_title:e.target.value})}/></div>
       <div className="form-group"><label>Rephrased Content</label><textarea className="form-textarea" rows={4} value={f.rephrased_content} onChange={e=>setF({...f,rephrased_content:e.target.value})}/></div>
-      <div className="form-group"><label>Telugu Content</label><textarea className="form-textarea" rows={4} style={{fontFamily:'Noto Sans Telugu,sans-serif'}} value={f.telugu_content} onChange={e=>setF({...f,telugu_content:e.target.value})}/></div>
+      <div className="form-group"><label>Telugu Content</label><textarea className="form-textarea telugu-text" rows={4} value={f.telugu_content} onChange={e=>setF({...f,telugu_content:e.target.value})}/></div>
       <div className="grid-2">
         <div className="form-group"><label>Category</label><select className="form-select" value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{CATS.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="form-group"><label>Flag</label><select className="form-select" value={f.flag} onChange={e=>setF({...f,flag:e.target.value})}><option value="P">Pending</option><option value="N">New</option><option value="A">AI Done</option><option value="Y">Top</option><option value="D">Deleted</option></select></div>
@@ -741,10 +749,10 @@ function YouTubePage() {
         <div className="card">
           <div className="card-header"><h3>Preview</h3><button className="btn btn-india" onClick={save} disabled={saving}>{saving?'Saving…':'Save to Top News'}</button></div>
           {result.thumbnail_url&&<img src={result.thumbnail_url} alt="" style={{width:'100%',maxWidth:480,borderRadius:8,marginBottom:16}}/>}
-          <div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>AI TITLE</div><h3 dangerouslySetInnerHTML={{__html:result.rephrased_title}}/></div>
+          <div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>AI TITLE</div><h3 className="telugu-text" dangerouslySetInnerHTML={{__html:result.telugu_title || result.rephrased_title}}/></div>
           <div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>CATEGORY</div><span className="badge badge-new">{result.category}</span></div>
-          <div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--accent)',marginBottom:4}}>REPHRASED CONTENT</div><div style={{background:'var(--bg-input)',padding:14,borderRadius:8,fontSize:13,lineHeight:1.7,maxHeight:280,overflowY:'auto'}} dangerouslySetInnerHTML={{__html:result.rephrased_content}}/></div>
-          {result.telugu_title&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--india-saffron)',marginBottom:4}}>TELUGU TITLE</div><p style={{fontFamily:'Noto Sans Telugu,sans-serif',fontSize:15}}>{result.telugu_title}</p></div>}
+          <div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--accent)',marginBottom:4}}>REPHRASED CONTENT</div><div className="news-premium-content telugu-text" style={{background:'var(--bg-input)',padding:14,borderRadius:8,maxHeight:280,overflowY:'auto'}} dangerouslySetInnerHTML={{__html:result.telugu_content || result.rephrased_content}}/></div>
+          {result.telugu_title&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:'var(--india-saffron)',marginBottom:4}}>TELUGU TITLE ✓</div></div>}
         </div>
       )}
       {result?.error&&<div className="card" style={{borderColor:'var(--india-red)'}}><div style={{color:'var(--india-red)',fontWeight:600}}>Error: {result.error}</div></div>}
@@ -1113,7 +1121,8 @@ function WishesManagementPage() {
     setUploading(true);
     try {
       const r = await api.uploadImage(file);
-      setForm(f => ({...f, image_url: r.data.url}));
+      const url = r.data.url;
+      setForm(f => ({...f, image_url: url}));
       toast.show('Image uploaded!');
     } catch(err) {
       toast.show('Upload failed: ' + (err.response?.data?.detail || err.message), 'error');
@@ -1172,11 +1181,11 @@ function WishesManagementPage() {
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <input className="input" value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))} placeholder="Image URL or upload" style={{flex:1}} />
                   <input type="file" ref={fileRef} accept="image/*" onChange={handleImageUpload} style={{display:'none'}} />
-                  <button className="btn" onClick={()=>fileRef.current?.click()} disabled={uploading} style={{whiteSpace:'nowrap'}}>
-                    {uploading ? 'Uploading...' : 'Upload'}
+                  <button className="btn" onClick={()=>fileRef.current?.click()} disabled={uploading} style={{whiteSpace:'nowrap', background:'var(--india-green)', color:'#fff', border:'none'}}>
+                    <IC.Upload style={{width:14,height:14,marginRight:4}}/>{uploading ? 'Uploading...' : 'Upload'}
                   </button>
                 </div>
-                {form.image_url && <img src={form.image_url} alt="" style={{width:80,height:60,objectFit:'cover',borderRadius:8,marginTop:8,border:'2px solid var(--border-light)'}} />}
+                {form.image_url && <img src={getImg(form.image_url)} alt="" style={{width:80,height:60,objectFit:'cover',borderRadius:8,marginTop:8,border:'2px solid var(--india-green)'}} />}
               </div>
               <div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1,color:'var(--text-muted)'}}>Expires At</label>
                 <input className="input" type="datetime-local" value={form.expires_at} onChange={e=>setForm(f=>({...f,expires_at:e.target.value}))} /></div>
@@ -1202,7 +1211,7 @@ function WishesManagementPage() {
             <tbody>
               {wishes.map(w => (
                 <tr key={w.id}>
-                  <td>{w.image_url ? <img src={w.image_url} alt="" style={{width:48,height:36,objectFit:'cover',borderRadius:6}} /> : <span style={{color:'var(--text-muted)',fontSize:11}}>No image</span>}</td>
+                  <td>{w.image_url ? <img src={getImg(w.image_url)} alt="" style={{width:48,height:36,objectFit:'cover',borderRadius:6,border:'1px solid var(--border-light)'}} /> : <span style={{color:'var(--text-muted)',fontSize:11}}>No image</span>}</td>
                   <td style={{fontWeight:700}}>{w.title}</td>
                   <td><span style={{background:typeColors[w.wish_type]||'#666',color:'#fff',padding:'2px 10px',borderRadius:20,fontSize:10,fontWeight:700,textTransform:'uppercase'}}>{w.wish_type}</span></td>
                   <td>{w.person_name || '—'}</td>

@@ -66,52 +66,49 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-SYSTEM_PROMPT = f"""You are a senior multilingual News Journalist, SEO Specialist, and Telugu language expert working for an independent news platform.
+SYSTEM_PROMPT = f"""You are an award-winning senior multilingual News Journalist and Telugu language specialist.
+Your mission is to transform raw scraped news into a premium reading experience: a polished, engaging English article AND a high-quality, natural Telugu version.
 
-YOUR TASK: Transform raw scraped news into TWO versions — a polished English article AND a Telugu translation.
+=== VISUAL EXPERIENCE & STRUCTURE — CRITICAL ===
+1. BOTH versions (English & Telugu) MUST follow this exact HTML hierarchy:
+   - <p><strong>[Brief Summary]</strong>: A one-sentence bold hook about the most important outcome.</p>
+   - <p><b>Key Highlights:</b></p>
+     <ul>
+       <li>A major factual point.</li>
+       <li>Another crucial detail or implication.</li>
+       <li>A third significant piece of information.</li>
+     </ul>
+   - 2-3 body <p> tags: Deep context, background, and expert-level analysis (paraphrased).
+   - <p><i>[What's Next]</i>: A brief italicized closing about upcoming developments.</p>
+2. NEVER use simple blocks of text. Use lists for facts and paragraphs for narrative.
+3. PRESERVE original lists: If the raw text has numbered/bulleted lists, incorporate their essence into the structure above.
 
-=== COPYRIGHT & ORIGINALITY — CRITICAL ===
-1. REWRITE 100%: Never copy the original title or any sentence verbatim. Every sentence MUST be original.
-2. Paraphrase all facts into your own words — change sentence structure, word choice, and phrasing completely.
-3. REMOVE all source names, agency credits (ANI, Reuters, PTI, CNN, etc.), reporter bylines, photo credits, URLs, timestamps, ads, and any attribution.
-4. Replace "According to [Source]" with neutral phrasing like "Reports indicate", "Officials stated", or present the facts directly.
-5. DO NOT mention any news agency, publication, or website name anywhere in the output.
+=== COPYRIGHT & ORIGINALITY ===
+4. REWRITE 100%: Never copy sentences verbatim. Use your own professional vocabulary.
+5. REMOVE ALL ATTRIBUTION: Strip out ANI, PTI, Reuters, CNN, GreatAndhra, Eenadu, etc.
+6. Replace "According to sources" with "Reports indicate" or "Officials stated".
+7. NO source names, reporter bylines, photo credits, URLs, or timestamps allowed.
 
-=== ENGLISH ARTICLE RULES ===
-6. TITLE: Write a compelling, click-worthy English headline (8-12 words). Active voice. Key subject + action.
-7. STRUCTURE — use proper HTML tags. PRESERVE the logical structure of the original:
-   - If the original uses numbered lists (1. 2. 3.), use <ol><li> in output
-   - If the original uses bullet points, use <ul><li> in output
-   - If the original uses alphabetical ordering (a. b. c.), preserve it with appropriate markup
-   - Opening <p>: Hook readers with the most important fact
-   - <p><b>Key Highlights:</b></p><ul>: 3-5 concise bullet facts
-   - 2-3 body <p>: Context, background, implications (paraphrased quotes, never direct)
-   - Closing <p>: What happens next / why it matters
-8. PARAGRAPHS: Maintain proper paragraph breaks. Each distinct topic or idea in its own <p> tag. Do NOT merge everything into one block.
-9. SEO: Natural keywords in title and opening paragraph.
-10. TONE: Professional, neutral journalism. Facts-first.
-
-=== TELUGU TRANSLATION RULES ===
-11. Translate the rephrased English into natural, everyday Telugu (not literal word-for-word).
-12. Telugu title: Concise (8-12 words in Telugu script).
-13. Telugu content: Same HTML structure as English (<p>, <ul>, <li>, <ol>).
-14. Use simple, clear Telugu. Keep proper nouns in common Telugu form or English.
+=== TELUGU EXCELLENCE ===
+8. DO NOT use formal/robotic "bookish" Telugu. Use "Vyavaharika" (spoken style used in top news portals like Sakshi/Eenadu).
+9. Ensure the Telugu title is punchy and fits the "Key subject + Action" format.
+10. Proper nouns: Use standard Telugu transliterations (e.g., 'Modi' as 'మోదీ').
 
 === CATEGORIZATION ===
-15. CATEGORY: Choose EXACTLY ONE from: {CATEGORIES_STR}
-16. TAGS: Exactly 5 lowercase English keywords
-17. SLUG: URL-safe title (lowercase, hyphens, max 8 words)
+11. CATEGORY: Choose EXACTLY ONE from: {CATEGORIES_STR}
+12. TAGS: Exactly 5 lowercase English keywords.
+13. SLUG: URL-safe lowercase-hyphenated title.
 
-=== OUTPUT — CRITICAL ===
-Return ONLY a valid JSON object. No markdown, no backticks, no text before or after.
+=== OUTPUT FORMAT ===
+Return ONLY a valid JSON object. No markdown, no backticks.
 {{
-  "title": "Compelling English headline here",
-  "content": "<p>Opening hook paragraph...</p><p><b>Key Highlights:</b></p><ul><li>Key fact 1</li></ul><p>Context paragraph...</p><p>Closing paragraph...</p>",
-  "category": "ExactCategoryName",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "slug": "seo-friendly-slug-here",
-  "telugu_title": "తెలుగు శీర్షిక ఇక్కడ",
-  "telugu_content": "<p>తెలుగు ప్రారంభ పేరా...</p><ul><li>ముఖ్య విషయం 1</li></ul><p>వివరాలు...</p>"
+  "title": "Compelling English Title",
+  "content": "<p><strong>...</strong></p><p><b>Key Highlights:</b></p><ul><li>...</li></ul><p>...</p><p><i>...</i></p>",
+  "category": "CategoryName",
+  "tags": ["t1", "t2", "t3", "t4", "t5"],
+  "slug": "title-slug",
+  "telugu_title": "తెలుగు శీర్షిక",
+  "telugu_content": "<p><strong>...</strong></p><p><b>ముఖ్య విషయాలు:</b></p><ul><li>...</li></ul><p>...</p><p><i>...</i></p>"
 }}"""
 
 def _build_prompt(title: str, content: str, lang: str) -> str:
@@ -178,160 +175,50 @@ def _validate(d: Dict, orig_title: str, orig_content: str) -> Dict:
 
 
 def _original_fallback(title: str, content: str) -> Dict:
-    """Return cleaned, formatted original content when all AI providers fail.
-    Applies: source-name removal, paragraph formatting, sentence splitting,
-    bold highlights on key phrases, list structure preservation,
-    basic auto-categorization, and proper slug generation."""
+    """Enhanced fallback: cleans text and provides basic HTML structure."""
     clean_title = _strip_source_names(title).strip()
     clean_content = _strip_source_names(content or title).strip()
 
-    # Format content with proper HTML paragraph structure
+    # Detect if original is Telugu (simple check for Telugu script range)
+    is_telugu = bool(re.search(r'[\u0c00-\u0c7f]', clean_title + clean_content))
+
     if clean_content and not re.search(r'<(p|div|ul|ol|br)', clean_content, re.I):
-        # Detect and preserve numbered/alphabetical lists
-        lines = re.split(r'\n', clean_content)
-        formatted_parts = []
-        current_list_type = None  # 'ol' or 'ul' or None
-        current_items = []
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                # Close any open list
-                if current_list_type and current_items:
-                    tag = current_list_type
-                    formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-                    current_items = []
-                    current_list_type = None
-                continue
-
-            # Check for numbered list items (1. 2. 3. or 1) 2) 3))
-            num_match = re.match(r'^(\d+)[.)\]]\s+(.+)', stripped)
-            # Check for alphabetical list items (a. b. c. or a) b))
-            alpha_match = re.match(r'^([a-zA-Z])[.)\]]\s+(.+)', stripped)
-            # Check for bullet list items (- or * or •)
-            bullet_match = re.match(r'^[-*•]\s+(.+)', stripped)
-
-            if num_match:
-                if current_list_type != 'ol' and current_items:
-                    tag = current_list_type or 'p'
-                    if tag == 'p':
-                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
-                    else:
-                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-                    current_items = []
-                current_list_type = 'ol'
-                current_items.append(num_match.group(2).strip())
-            elif alpha_match and len(alpha_match.group(1)) == 1:
-                if current_list_type != 'ol' and current_items:
-                    tag = current_list_type or 'p'
-                    if tag == 'p':
-                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
-                    else:
-                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-                    current_items = []
-                current_list_type = 'ol'
-                current_items.append(alpha_match.group(2).strip())
-            elif bullet_match:
-                if current_list_type != 'ul' and current_items:
-                    tag = current_list_type or 'p'
-                    if tag == 'p':
-                        formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
-                    else:
-                        formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-                    current_items = []
-                current_list_type = 'ul'
-                current_items.append(bullet_match.group(1).strip())
-            else:
-                # Regular paragraph line
-                if current_list_type and current_items:
-                    tag = current_list_type
-                    formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-                    current_items = []
-                    current_list_type = None
-                formatted_parts.append(f'<p>{stripped}</p>')
-
-        # Close any remaining list
-        if current_list_type and current_items:
-            tag = current_list_type
-            formatted_parts.append(f'<{tag}>{"".join(f"<li>{it}</li>" for it in current_items)}</{tag}>')
-        elif current_items:
-            formatted_parts.append(f'<p>{" ".join(current_items)}</p>')
-
-        if formatted_parts:
-            clean_content = ''.join(formatted_parts)
+        # Basic paragraphing
+        paras = [p.strip() for p in re.split(r'\n+', clean_content) if p.strip()]
+        if len(paras) > 1:
+            clean_content = "".join(f"<p>{p}</p>" for p in paras)
         else:
-            # Fallback: split by sentences for readability
-            paragraphs = re.split(r'\n\s*\n', clean_content)
-            paragraphs = [p.strip() for p in paragraphs if p.strip() and len(p.strip()) > 10]
-            if paragraphs:
-                if len(paragraphs) == 1 and len(paragraphs[0]) > 300:
-                    sentences = re.split(r'(?<=[.!?])\s+', paragraphs[0])
-                    chunks = []
-                    current = []
-                    for s in sentences:
-                        current.append(s)
-                        if len(current) >= 3:
-                            chunks.append(' '.join(current))
-                            current = []
-                    if current:
-                        chunks.append(' '.join(current))
-                    clean_content = ''.join(f'<p>{c}</p>' for c in chunks)
-                else:
-                    clean_content = ''.join(f'<p>{p}</p>' for p in paragraphs)
+            # Sentence-based paragraphing for long single blocks
+            sentences = re.split(r'(?<=[.!?])\s+', clean_content)
+            chunks = [' '.join(sentences[i:i+3]) for i in range(0, len(sentences), 3)]
+            clean_content = "".join(f"<p>{c}</p>" for c in chunks)
 
-    # Add bold highlights to the first sentence of first paragraph for emphasis
-    if '<p>' in clean_content:
-        def bold_first_sentence(match):
-            inner = match.group(1)
-            # Bold the first sentence only
-            parts = re.split(r'(?<=[.!?])\s+', inner, maxsplit=1)
-            if len(parts) > 1:
-                return f'<p><b>{parts[0]}</b> {parts[1]}</p>'
-            return f'<p><b>{inner}</b></p>'
-        # Only bold the first paragraph
-        clean_content = re.sub(r'<p>(.*?)</p>', bold_first_sentence, clean_content, count=1, flags=re.S)
-
-    # Basic auto-categorization from keywords
+    # Basic auto-categorization
     cat = "Home"
     text_lower = f"{clean_title} {clean_content[:500]}".lower()
     cat_keywords = {
-        "Sports": ["cricket", "football", "tennis", "ipl", "match", "player", "team", "sport", "game", "nba", "nfl"],
-        "Tech": ["technology", "software", "ai ", "google", "apple", "microsoft", "startup", "app ", "cyber", "digital", "data"],
-        "Politics": ["election", "minister", "government", "congress", "bjp", "parliament", "vote", "political", "policy", "senate"],
-        "Business": ["market", "stock", "economy", "revenue", "company", "billion", "million", "trade", "invest", "bank", "financial"],
-        "Health": ["health", "medical", "doctor", "hospital", "disease", "vaccine", "drug", "patient", "treatment", "who "],
-        "Entertainment": ["movie", "film", "actor", "actress", "bollywood", "hollywood", "music", "celebrity", "oscar", "grammy"],
-        "Science": ["research", "study", "scientist", "space", "nasa", "planet", "climate", "environment", "fossil"],
-        "World": ["ukraine", "russia", "china", "europe", "international", "global", "un ", "nato", "foreign"],
+        "Sports": ["cricket", "football", "match", "ipl", "player", "sport"],
+        "Tech": ["ai ", "technology", "google", "apple", "app ", "software"],
+        "Politics": ["election", "minister", "bjp", "congress", "government"],
+        "Business": ["market", "stock", "economy", "billion", "million", "bank"],
+        "Entertainment": ["movie", "film", "actor", "hollywood", "bollywood"],
     }
-    for c, keywords in cat_keywords.items():
-        if any(kw in text_lower for kw in keywords):
+    for c, kw in cat_keywords.items():
+        if any(k in text_lower for k in kw):
             cat = c
             break
 
-    # Generate slug
     slug = re.sub(r'[^\w\s-]', '', clean_title.lower()).strip()
     slug = re.sub(r'[\s_-]+', '-', slug)[:80]
 
-    # Generate basic tags
-    words = re.findall(r'\b[a-z]{4,}\b', text_lower)
-    word_freq = {}
-    stopwords = {"that", "this", "with", "from", "have", "been", "were", "will", "also", "which", "their", "about", "said", "more", "than", "into", "after", "some", "when", "would", "could"}
-    for w in words:
-        if w not in stopwords:
-            word_freq[w] = word_freq.get(w, 0) + 1
-    tags = sorted(word_freq, key=word_freq.get, reverse=True)[:5]
-
-    logger.warning(f"[AI] FALLBACK: Using cleaned original for '{clean_title[:50]}' — configure AI API keys for proper rephrasing")
-
     return {
-        "rephrased_title": clean_title,
-        "rephrased_content": clean_content,
+        "rephrased_title": clean_title if not is_telugu else "",
+        "rephrased_content": clean_content if not is_telugu else "",
         "category": cat,
-        "tags": tags,
+        "tags": ["news", cat.lower()],
         "slug": slug,
-        "telugu_title": "",
-        "telugu_content": "",
+        "telugu_title": clean_title if is_telugu else "",
+        "telugu_content": clean_content if is_telugu else "",
         "method": "original_cleaned",
     }
 
@@ -381,7 +268,7 @@ def _try_ollama(prompt: str) -> Optional[str]:
             f"{settings.OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": settings.OLLAMA_MODEL,
-                "prompt": f"{SYSTEM_PROMPT}\n\n{prompt}",
+                "prompt": f"{SYSTEM_PROMPT}\\n\\n{prompt}",
                 "stream": False,
                 "options": {"temperature": 0.4, "num_predict": 2048},
             },

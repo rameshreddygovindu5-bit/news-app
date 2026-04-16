@@ -160,6 +160,56 @@ body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-dar
 .login-card h2 { font-size: 22px; font-weight: 800; margin-bottom: 4px; text-align: center; }
 .login-card p { color: var(--text-muted); font-size: 13px; text-align: center; }
 
+/* ── Premium News Content ── */
+.news-premium-content {
+  line-height: 1.8;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.news-premium-content p {
+  margin-bottom: 16px;
+}
+.news-premium-content strong {
+  color: var(--india-saffron);
+}
+.news-premium-content b {
+  color: var(--text-primary);
+  display: inline-block;
+  margin-top: 8px;
+  border-bottom: 2px solid var(--india-saffron);
+  padding-bottom: 2px;
+}
+.news-premium-content ul, .news-premium-content ol {
+  margin: 16px 0;
+  padding-left: 24px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  padding: 16px 16px 16px 36px;
+  border-left: 4px solid var(--india-saffron);
+}
+.news-premium-content li {
+  margin-bottom: 10px;
+}
+.news-premium-content i {
+  display: block;
+  margin-top: 20px;
+  padding: 12px;
+  background: rgba(19,136,8,0.08);
+  border-radius: 6px;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--india-green);
+}
+
+/* ── Telugu Specific ── */
+.telugu-text {
+  font-family: 'Noto Sans Telugu', sans-serif;
+  line-height: 2.1;
+  font-size: 1.1em;
+  letter-spacing: 0.2px;
+}
+
 @media (max-width: 768px) {
   .app-layout { flex-direction: column; }
   .sidebar { width: 100%; height: auto; min-height: unset; position: relative; }

@@ -102,9 +102,18 @@ export const getSummary = (a: NewsArticle, max = 180): string => {
   return raw.length > max ? raw.slice(0, max).trimEnd() + '…' : raw;
 };
 
+import { API_BASE } from "@/lib/api";
+
 /** Best available image URL */
-export const getImage = (a: NewsArticle): string =>
-  a.image_url?.trim() ? a.image_url.trim() : categoryPlaceholder(a.category);
+export const getImage = (a: NewsArticle): string => {
+  const u = a.image_url?.trim();
+  if (!u) return categoryPlaceholder(a.category);
+  if (u.startsWith('/uploads')) {
+    const base = API_BASE.replace(/\/$/, '');
+    return `${base}${u}`;
+  }
+  return u;
+};
 
 /** Strip HTML tags */
 function stripHtml(s: string): string {
