@@ -266,3 +266,119 @@ img { object-fit: cover; background-color: #f1f5f9; }
 /* FIX 3: no-scrollbar utility */
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ══ UI IMPROVEMENTS ═══════════════════════════════════════════════════ */
+
+/* Telugu font — applies to all .telugu elements */
+.telugu, .article-content-telugu, .article-content-telugu * {
+  font-family: 'Noto Sans Telugu', sans-serif !important;
+  font-feature-settings: "kern" 1;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+}
+
+/* Article content formatting */
+.article-content p, .article-content-telugu p {
+  margin-bottom: 1.35rem;
+  line-height: 1.85;
+  color: #2d2d2d;
+}
+.article-content h2, .article-content h3 { font-weight: 800; margin: 1.5rem 0 0.75rem; }
+.article-content blockquote {
+  border-left: 4px solid var(--pf-saffron);
+  padding: 0.75rem 1rem;
+  background: rgba(255,153,51,0.05);
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+  color: #555;
+  margin: 1.25rem 0;
+}
+
+/* Reading progress bar */
+.reading-progress {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 3px; z-index: 9999; transform-origin: 0%;
+  background: linear-gradient(90deg, var(--pf-saffron), var(--pf-orange), var(--pf-green));
+}
+
+/* Skeleton loading animations */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Button focus rings for accessibility */
+button:focus-visible {
+  outline: 2px solid var(--pf-saffron);
+  outline-offset: 2px;
+}
+
+/* Smooth page transitions */
+main { animation: fadeIn 0.25s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Wish card hover glow */
+.wish-card-glow:hover { box-shadow: 0 20px 60px rgba(255,153,51,0.18), 0 4px 16px rgba(0,0,128,0.06); }
+
+/* Share button micro-interaction */
+.share-btn-pulse:active { transform: scale(0.93); }
+
+/* Category pill active state */
+.cat-pill-active {
+  background: linear-gradient(135deg, var(--pf-navy) 0%, var(--pf-blue) 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(0,0,128,0.25);
+}
+
+/* Better form inputs */
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 3px rgba(255,153,51,0.15);
+}
+
+/* Line-clamp utilities */
+.line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+.line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.line-clamp-3 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+
+/* Tricolor bg for home */
+.bg-tricolor-light {
+  background: linear-gradient(180deg, #fffdf9 0%, #f9fafb 100%);
+}
+
+/* Tricolor text gradient */
+.text-tricolor {
+  background: linear-gradient(90deg, var(--pf-saffron) 0%, var(--pf-navy) 50%, var(--pf-green) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Better shadow for cards */
+.card-shadow { box-shadow: 0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04); }
+.card-shadow:hover { box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06); }
+
+/* Mobile back button */
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; font-size: 13px; color: var(--pf-navy);
+  padding: 8px 14px; border-radius: 999px;
+  background: rgba(0,0,128,0.06); border: 1px solid rgba(0,0,128,0.12);
+  transition: all 0.2s;
+}
+.back-btn:hover { background: var(--pf-navy); color: white; }
+
+/* Poll vote bar transition */
+.poll-vote-bar { transition: width 1.2s cubic-bezier(0.4,0,0.2,1); }
+
+/* Footer link hover */
+footer a:hover { color: var(--pf-saffron) !important; text-decoration: underline; }
+
+/* Animate-spin for loaders */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 0.8s linear infinite; }

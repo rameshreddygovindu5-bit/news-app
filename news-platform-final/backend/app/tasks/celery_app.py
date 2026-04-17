@@ -125,7 +125,7 @@ def content_hash(source_id, title): return hashlib.sha256(f"{source_id}{normaliz
 
 # ── TASK 1: SCRAPE ────────────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.scrape_all_sources")
-def scrape_all_sources():
+def scrape_all_sources(ignore_window: bool = False):
     _banner("SCRAPE ALL SOURCES")
     db = get_db()
     log = log_job(db, "scrape_sources")
@@ -136,11 +136,32 @@ def scrape_all_sources():
             names = [s.strip().lower() for s in settings.ENABLED_SOURCES.split(",")]
             q = q.filter(func.lower(NewsSource.name).in_(names))
         sources = q.all()
-        if not sources:
-            complete_job(db, log, 0, 0, "No sources"); return
+
+        # Filter sources by time window (unless ignore_window=True)
+        filtered_sources = []
+        if ignore_window:
+            filtered_sources = sources
+        else:
+            from datetime import timezone
+            now_utc = datetime.now(timezone.utc)
+            now_est_hour = (now_utc - timedelta(hours=5)).hour
+            now_ist_hour = (now_utc + timedelta(hours=5, minutes=30)).hour
+            
+            for s in sources:
+                name_l = s.name.lower()
+                if "google" in name_l:
+                    if 5 <= now_est_hour < 21: filtered_sources.append(s)
+                    else: logger.info(f"[SCHED] Skipping {s.name} (Outside 5AM-9PM EST window)")
+                else:
+                    if 5 <= now_ist_hour < 21: filtered_sources.append(s)
+                    else: logger.info(f"[SCHED] Skipping {s.name} (Outside 5AM-9PM IST window)")
+
+        if not filtered_sources:
+            complete_job(db, log, 0, 0, "No sources in active time window"); return
+        
         ok = err = 0
         with ThreadPoolExecutor(max_workers=16) as pool:
-            futures = {pool.submit(worker_scrape_source, s.id, log.run_id): s for s in sources}
+            futures = {pool.submit(worker_scrape_source, s.id, log.run_id): s for s in filtered_sources}
             for f in as_completed(futures):
                 r = f.result(); ok+=r.get("inserted",0); err+=r.get("errors",0)
         complete_job(db, log, ok, err)
@@ -205,15 +226,24 @@ def worker_scrape_source(source_id: int, run_id: str) -> Dict:
             clean_slug = re.sub(r'[^\w\s-]','',clean_title.lower()).strip().replace(' ','-')[:100]
             slug = f"{clean_slug}-{hashlib.md5(a.url.encode()).hexdigest()[:6]}"
             new_art = NewsArticle(
-                source_id=source_id, original_title=clean_title,
-                original_content=clean_content or clean_title, original_url=a.url,
+                source_id=source_id,
+                original_title=clean_title,
+                original_content=clean_content or clean_title,
+                original_url=a.url,
                 original_language=src.language or "en",
                 published_at=a.published_at or datetime.now(timezone.utc),
-                image_url=a.image_url, content_hash=ch,
-                is_duplicate=is_dup, duplicate_of_id=dup_id,
-                flag="N", ai_status="pending",
-                rephrased_title=clean_title, rephrased_content=clean_content,
-                category="Home", slug=slug,
+                image_url=a.image_url,
+                content_hash=ch,
+                is_duplicate=bool(is_dup),
+                duplicate_of_id=dup_id,
+                flag="N",
+                ai_status="pending",
+                ai_error_count=0, # Explicitly set for SQLite safety
+                rephrased_title=clean_title,
+                rephrased_content=clean_content,
+                category=src.scraper_config.get("target_category", "Home"),
+                slug=slug,
+                scrape_metadata=a.metadata or {}
             )
             db.add(new_art); db.commit(); stats["inserted"] += 1
         src.last_scraped_at = datetime.now(timezone.utc); db.commit()
@@ -512,10 +542,12 @@ def sync_to_aws():
         SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,created_at,updated_at)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                  ON CONFLICT (original_url) DO UPDATE SET
+                   original_title=EXCLUDED.original_title, original_content=EXCLUDED.original_content,
                    rephrased_title=EXCLUDED.rephrased_title, rephrased_content=EXCLUDED.rephrased_content,
                    telugu_title=EXCLUDED.telugu_title, telugu_content=EXCLUDED.telugu_content,
                    category=EXCLUDED.category, slug=EXCLUDED.slug, tags=EXCLUDED.tags, flag=EXCLUDED.flag,
-                   image_url=EXCLUDED.image_url, rank_score=EXCLUDED.rank_score, updated_at=EXCLUDED.updated_at"""
+                   image_url=EXCLUDED.image_url, author=EXCLUDED.author, rank_score=EXCLUDED.rank_score,
+                   updated_at=EXCLUDED.updated_at"""
         for art in records:
             try:
                 # Type conversions for Postgres

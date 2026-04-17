@@ -106,6 +106,13 @@ import { API_BASE } from "@/lib/api";
 
 /** Best available image URL */
 export const getImage = (a: NewsArticle): string => {
+  const src = (a.source_name || "").toLowerCase();
+  
+  // Requirement: TV9 and Sakshi source images should be replaced by category-wise placeholders
+  if (src.includes("tv9") || src.includes("sakshi")) {
+    return categoryPlaceholder(a.category);
+  }
+
   const u = a.image_url?.trim();
   if (!u) return categoryPlaceholder(a.category);
   if (u.startsWith('/uploads')) {
@@ -139,9 +146,11 @@ export function categoryPlaceholder(cat?: string): string {
     travel:        'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80',
     surveys:       'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
     polls:         'https://images.unsplash.com/photo-1540910419892-4a39d20b2944?w=800&q=80',
+    general:       'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&q=80', // Newspaper photo
+    telugu:        'https://images.unsplash.com/photo-1588681664899-f142ff2dc9b1?w=800&q=80', // Indian flag/culture
   };
   const key = (cat || '').toLowerCase().trim();
-  return map[key] ?? map.home;
+  return map[key] ?? map.general ?? map.home;
 }
 
 /** Canonical categories — MUST match backend config.py CATEGORIES */
@@ -173,6 +182,23 @@ export interface WishItem {
   display_on_home: boolean;
   likes_count: number;
   created_by?: string;
+  created_at: string;
+  expires_at?: string;
+}
+
+/** Poll option */
+export interface PollOption {
+  id: number;
+  option_text: string;
+  votes_count: number;
+}
+
+/** Active poll */
+export interface PollItem {
+  id: number;
+  question: string;
+  options: PollOption[];
+  is_active: boolean;
   created_at: string;
   expires_at?: string;
 }

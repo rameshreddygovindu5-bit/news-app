@@ -328,8 +328,9 @@ function ArticleDetailModal({article:a,onClose}) {
 // ─── Articles Page ────────────────────────────────────────────────────
 function ArticlesPage() {
   const [articles,setArticles]=useState([]);const [total,setTotal]=useState(0);const [page,setPage]=useState(1);const [tp,setTp]=useState(1);const [ld,setLd]=useState(true);
-  const [kw,setKw]=useState('');const [cat,setCat]=useState('');const [flag,setFlag]=useState('');const [srcId,setSrcId]=useState('');const [aiStatus,setAiStatus]=useState('');
+  const [kw,setKw]=useState('');const [cat,setCat]=useState('');const [flag,setFlag]=useState('');const [srcId,setSrcId]=useState('');
   const [sources,setSrc]=useState([]);const [showCreate,setShowCreate]=useState(false);const [editA,setEditA]=useState(null);const [viewA,setViewA]=useState(null);const toast=useToast();
+  const debounceRef=useRef(null);
 
   const load=useCallback(()=>{
     setLd(true);
@@ -337,6 +338,13 @@ function ArticlesPage() {
     if(kw)p.keyword=kw;if(cat)p.category=cat;if(flag)p.flag=flag;if(srcId)p.source_id=srcId;
     api.getArticles(p).then(r=>{setArticles(r.data.articles);setTotal(r.data.total);setTp(r.data.total_pages);setLd(false)}).catch(()=>setLd(false));
   },[page,kw,cat,flag,srcId]);
+
+  // Auto-search on keyword change with 500ms debounce
+  const handleKwChange=(v)=>{
+    setKw(v);
+    if(debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current=setTimeout(()=>{ setPage(1); },500);
+  };
 
   useEffect(()=>{load()},[load]);
   useEffect(()=>{api.getSources().then(r=>setSrc(r.data)).catch(()=>{})},[]);
@@ -356,7 +364,7 @@ function ArticlesPage() {
         <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
           <div style={{flex:'1 1 180px'}}>
             <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>SEARCH</label>
-            <input className="form-input" placeholder="Title, content, Telugu…" value={kw} onChange={e=>setKw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(setPage(1),load())}/>
+            <input className="form-input" placeholder="Title, content, Telugu…" value={kw} onChange={e=>handleKwChange(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(setPage(1),load())}/>
           </div>
           <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>CATEGORY</label>
             <select className="form-select" value={cat} onChange={e=>{setCat(e.target.value);setPage(1)}}>
@@ -370,6 +378,7 @@ function ArticlesPage() {
             <select className="form-select" value={srcId} onChange={e=>{setSrcId(e.target.value);setPage(1)}}>
               <option value="">All</option>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
             </select></div>
+          <button className="btn btn-india btn-sm" onClick={()=>{setPage(1);load()}} style={{alignSelf:'flex-end'}}><IC.Ref/>Search</button>
           <button className="btn btn-secondary" onClick={()=>{setKw('');setCat('');setFlag('');setSrcId('');setPage(1)}}>Clear</button>
           <button className="btn btn-secondary" onClick={load}><IC.Ref/></button>
         </div>

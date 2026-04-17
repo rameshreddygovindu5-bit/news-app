@@ -31,12 +31,16 @@ export default function Home() {
     queryFn: ({ pageParam = 1 }) =>
       newsApi.getArticles({
         page:      pageParam as number,
-        page_size: 50,
+        page_size: 25,
+        flag:      "Y", // Top news only
         category:  cat === "All" ? undefined : cat,
         keyword:   debouncedSearch || undefined,
       }),
-    getNextPageParam: (last) =>
-      last.page < last.total_pages ? last.page + 1 : undefined,
+    getNextPageParam: (last, allPages) => {
+      const totalLoaded = allPages.length * 25;
+      if (totalLoaded >= 100) return undefined; // Cap at 100 articles
+      return last.page < last.total_pages ? last.page + 1 : undefined;
+    },
     staleTime: 2 * 60 * 1000,
   });
 

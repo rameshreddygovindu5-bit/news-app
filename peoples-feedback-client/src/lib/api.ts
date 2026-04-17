@@ -29,9 +29,9 @@ async function post<T>(path: string, body?: any): Promise<T> {
 }
 
 export const newsApi = {
-  /** List published articles. Supports category, keyword, pagination. */
-  getArticles: (p: { page?: number; page_size?: number; category?: string; keyword?: string; lang?: string }) =>
-    get<import('@/types/news').ArticleListResponse>('/api/articles', { ...p, flags: 'A,Y' }),
+  /** List published articles. Supports category, keyword, flag, pagination. */
+  getArticles: (p: { page?: number; page_size?: number; category?: string; keyword?: string; lang?: string; flag?: string }) =>
+    get<import('@/types/news').ArticleListResponse>('/api/articles', { ...p, flags: p.flag ? undefined : 'A,Y' }),
 
   /** Top 500 ranked news (flag=Y) */
   getTopNews: (limit = 500) =>
@@ -67,4 +67,12 @@ export const newsApi = {
   /** Like a wish */
   likeWish: (id: number) =>
     post<{ success: boolean; likes_count: number }>(`/api/wishes/${id}/like`),
+
+  /** Active polls for public display */
+  getPolls: () =>
+    get<import('@/types/news').PollItem[]>('/api/polls/'),
+
+  /** Vote on a poll option */
+  voteOnPoll: (pollId: number, optionId: number) =>
+    post<{ success: boolean; total_votes: number }>(`/api/polls/${pollId}/vote`, { option_id: optionId }),
 };

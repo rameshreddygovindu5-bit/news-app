@@ -130,8 +130,8 @@ class GreatAndhraScraper(BaseScraper):
         self.sections = self.scraper_config.get("sections", defaults)
 
         self.max_articles = min(self.scraper_config.get("max_articles", 2000), 2000)
-        self.latest_max_pages = self.scraper_config.get("latest_max_pages", 50)
-        self.section_max_pages = self.scraper_config.get("section_max_pages", 10)
+        self.latest_max_pages = self.scraper_config.get("latest_max_pages", 5)
+        self.section_max_pages = self.scraper_config.get("section_max_pages", 3)
         self.request_delay = self.scraper_config.get("request_delay", 0.5)
         self.fetch_full_content = self.scraper_config.get("fetch_full_content", True)
         self.max_retries = self.scraper_config.get("max_retries", 2)

@@ -80,6 +80,16 @@ services:
     depends_on:
       backend: {condition: service_healthy}
 
+  pf_client:
+    build:
+      context: ../peoples-feedback-client
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    ports: ["3001:3001"]
+    depends_on:
+      backend: {condition: service_healthy}
+
 volumes:
   redis_data:
   beat_data:

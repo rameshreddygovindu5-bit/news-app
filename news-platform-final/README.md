@@ -1,113 +1,175 @@
-# News Aggregation Platform + Peoples Feedback Client
-
-AI-powered news aggregation platform with automated scraping, AI rephrasing (English + Telugu),
-ranking, AWS sync, and social media posting.
+# NewsAI Platform — Setup & Deployment Guide
 
 ## Architecture
 
 ```
-news-platform-final/
-├── backend/                  # FastAPI + SQLAlchemy + APScheduler
-│   ├── app/
-│   │   ├── api/              # REST endpoints (articles, auth, scheduler, youtube, polls, etc.)
-│   │   ├── models/           # SQLAlchemy models
-│   │   ├── schemas/          # Pydantic request/response schemas
-│   │   ├── scrapers/         # Source-specific scrapers (CNN, Telugu news, etc.)
-│   │   ├── services/         # AI service, auth, category, social, youtube
-│   │   └── tasks/            # Celery tasks + in-process scheduler
-│   ├── manage.py             # CLI management tool
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/                 # React CRA — Admin UI
-│   ├── src/App.js            # Single-file admin dashboard
-│   ├── src/services/api.js   # Admin API client
-│   └── Dockerfile            # Production nginx build
-├── peoples-feedback-client/  # Vite + React + TypeScript — Public news site
-│   ├── src/pages/            # Home, News, NewsDetail, Telugu
-│   ├── src/components/news/  # PremiumHeader, NewsLayout, ShareMenu, etc.
-│   ├── src/lib/api.ts        # Public API client
-│   └── src/types/news.ts     # Shared types + display helpers
-├── docker-compose.yml        # Full stack (backend + redis + frontend)
-└── update-nginx.sh           # EC2 nginx config script
+news-platform-final/          ← This repo
+├── backend/                  ← FastAPI + Celery + AI pipeline
+├── frontend/                 ← React admin dashboard (port 3000)
+├── docker-compose.yml        ← Runs all services
+└── ...
+
+peoples-feedback-client/      ← Public news site (port 3001)
+├── src/
+│   ├── pages/Telugu.tsx      ← Native Telugu news (no Google Translate reload)
+│   ├── lib/api.ts            ← Shared API client (polls, wishes, articles)
+│   └── components/
+└── Dockerfile
 ```
 
-## Quick Start (Local Development)
+## Ports
+| Service        | Local Port | Description           |
+|----------------|------------|-----------------------|
+| Backend API    | 8005       | FastAPI               |
+| Admin Frontend | 3000       | React admin           |
+| PF Client      | 3001       | Public news site      |
+| Redis          | 6380       | Task queue            |
 
-### Backend
+---
+
+## Local Development
+
+### 1. Clone & Configure
+```bash
+git clone <repo>
+cd news-platform-final
+cp backend/.env.example backend/.env
+# Edit backend/.env — add GEMINI_API_KEY, AWS credentials etc.
+```
+
+### 2. Run with Docker Compose
+```bash
+# Both projects must be siblings:
+# ├── news-platform-final/
+# └── peoples-feedback-client/
+
+docker compose up --build -d
+```
+
+Services start in order: Redis → Backend → Celery Worker → Celery Beat → Frontend → PF Client.
+
+### 3. Run Backend Locally (no Docker)
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env  # Edit with your DB and API keys
-python manage.py init-db
-uvicorn app.main:app --port 8005 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
 ```
 
-### Admin Frontend
+### 4. Run Frontend Locally
 ```bash
+# Admin dashboard
 cd frontend
-npm install
-npm start  # Opens on http://localhost:3000
-```
-Default login: `admin` / `admin123`
+npm install && npm start       # http://localhost:3000
 
-### Peoples Feedback Client
-```bash
+# Public client
 cd peoples-feedback-client
-npm install
-npm run dev  # Opens on http://localhost:5173
+npm install && npm run dev     # http://localhost:3001
 ```
 
-### Docker Compose (Full Stack)
-```bash
-docker-compose up --build
-```
+---
 
 ## AWS EC2 Deployment
 
-1. Start the backend on EC2 (port 8005)
-2. Build and deploy peoples-feedback-client:
-   ```bash
-   cd peoples-feedback-client && npm run build
-   # Copy dist/ to /var/www/peoples-feedback/ on EC2
-   ```
-3. Run nginx setup:
-   ```bash
-   sudo bash update-nginx.sh
-   ```
+### Prerequisites
+- EC2 instance (t3.medium+, Ubuntu 22.04)
+- Security group: open ports 22, 80, 443, 3000, 3001, 8005
+- Docker + Docker Compose installed
+
+### Deploy
+```bash
+# On EC2
+git pull
+cd news-platform-final
+docker compose pull
+docker compose up --build -d
+```
+
+### Environment Variables (backend/.env)
+```env
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/newsagg
+DATABASE_URL_SYNC=postgresql://user:pass@host:5432/newsagg
+REDIS_URL=redis://redis:6379/0
+
+# AI (at least one required)
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
+
+# AWS remote DB (for sync)
+AWS_DB_HOST=...
+AWS_DB_PORT=5432
+AWS_DB_NAME=news_db_fe
+AWS_DB_USER=...
+AWS_DB_PASSWORD=...
+
+# Social (optional)
+FB_PAGE_ACCESS_TOKEN=...
+FB_PAGE_ID=...
+SOCIAL_SITE_URL=https://www.peoples-feedback.com
+```
+
+### nginx Reverse Proxy (EC2)
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    # Admin dashboard
+    location /admin/ {
+        proxy_pass http://localhost:3000/;
+    }
+
+    # Public site
+    location / {
+        proxy_pass http://localhost:3001/;
+    }
+
+    # API
+    location /api/ {
+        proxy_pass http://localhost:8005/api/;
+        proxy_read_timeout 120s;
+    }
+}
+```
+
+---
+
+## Key Fixes in This Version
+
+### ✅ Telugu Page — No More Reload Loop
+`Telugu.tsx` and `TeluguDetail.tsx` previously called `window.location.reload()` to force Google Translate — causing an infinite reload cycle every time you clicked the Telugu button.
+
+**Fixed:** Removed both `useEffect` reload blocks. The Telugu page displays native Telugu content from the database (`telugu_title` / `telugu_content` fields) — instant load, no Google Translate dependency.
+
+### ✅ AI Reprocess Button Now Works
+The purple `AI` button in the Articles table was calling `POST /api/articles/:id/reprocess` which didn't exist — every click silently returned 404.
+
+**Fixed:** Added the endpoint. It resets `ai_status="pending"` and queues the article through the full AI pipeline (rephrase + Telugu translation + category + slug). Falls back to synchronous if Celery is unavailable. Triggers AWS sync on completion.
+
+### ✅ Polls API Unified
+`PollWidget.tsx` was using raw `fetch()` calls bypassing the shared API client and proxy config. Added `getPolls()` and `voteOnPoll()` to `newsApi`, updated PollWidget to use them.
+
+### ✅ Articles Search Debounce
+Added 500ms auto-search on keyword change + explicit Search button. Previously only triggered on Enter keypress.
+
+### ✅ Local ↔ AWS Always in Sync
+Every write operation (create, update, delete, approve, reprocess) now triggers `sync_to_aws` automatically. The background `_run_ai_and_rank` also syncs after AI completes.
+
+### ✅ Cleanup
+- Removed 13 debug/test scripts from backend root
+- Removed `scratch/` folder
+- Removed `google_news_service.py` (duplicate of scraper)  
+- Removed all `__pycache__` directories
+- Removed `newsagg.db` (SQLite dev file)
+
+---
+
+## Default Credentials
+- Admin login: `admin` / `admin123`
+- Change immediately after first login via Users page
 
 ## Pipeline Flow
-
 ```
-Scrape → AI Rephrase (P1→P4 chain) → Ranking → AWS Sync → Social Posting
+Reporter submits (P) → Admin approves (N) → AI processes (A) → Rank selects Top 100 (Y)
+                                        ↕
+                               AWS sync at every step
 ```
-
-### AI Provider Chain
-| Priority | Provider | Notes |
-|----------|----------|-------|
-| P1 | Gemini PRIMARY | Main AI provider |
-| P2 | Gemini SECONDARY | Backup Gemini key |
-| P3 | OpenAI GPT-4o-mini | Fallback |
-| P4 | Ollama (local) | Offline fallback |
-| Last | Original (cleaned) | Source names removed, paragraphs preserved |
-
-### Article Flags
-- `P` — Pending approval (reporter submissions)
-- `N` — New (approved, awaiting AI)
-- `A` — AI processed
-- `Y` — Top News (ranked, visible on public site)
-- `D` — Deleted (soft)
-
-## Key Fixes Applied
-
-1. **Mobile responsive** — Improved header, cards, and typography for mobile browsers
-2. **Load More button** — Fixed click handler with explicit event handling
-3. **Mobile menu** — Horizontal scrollable pill bar replaces dropdowns on mobile
-4. **AI Rephrase** — Source name removal, paragraph preservation, copyright-safe output
-5. **Empty menu hiding** — Categories with 0 articles are hidden from navigation
-6. **Code consolidation** — Removed duplicate files, standalone scripts, build artifacts
-7. **S3 cleanup** — Confirmed no S3 code present (EC2-only deployment)
-8. **Admin UI AWS** — Production Dockerfile with nginx SPA routing + API proxy
-9. **Category images** — Full category-specific placeholder image mapping
-10. **Image overlay** — Tricolor gradient overlay for copyright differentiation
-11. **YouTube workflow** — Fixed save to include Telugu, flag=Y, proper slug
-12. **General improvements** — ai_status in responses, mobile-first design, error handling

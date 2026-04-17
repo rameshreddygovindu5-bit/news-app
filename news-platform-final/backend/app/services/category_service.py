@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 CANONICAL_CATEGORIES: List[str] = [
-    "Home", "World", "Politics", "Business", "Tech",
+    "Home", "World", "Politics", "Business", "Tech", "India", "U.S.",
     "Health", "Science", "Entertainment", "Events", "Sports",
     "Surveys", "Polls",
 ]

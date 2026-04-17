@@ -20,6 +20,13 @@ Commands:
   status           Show DB counts and last job log
 """
 import sys
+import importlib
+
+# Fix Windows encoding issues for unicode characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import asyncio
 import logging
 
@@ -28,6 +35,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(message)s",
 )
 logger = logging.getLogger("manage")
+import importlib
+ca_module = importlib.import_module("app.tasks.celery_app")
 
 
 # ── init-db ───────────────────────────────────────────────────────────
@@ -71,14 +80,7 @@ def cmd_create_admin():
         db.close()
 
 
-# ── Task runner ───────────────────────────────────────────────────────
-def _run(fn_name: str, label: str):
-    """Import and call a celery_app task function directly (bypasses broker)."""
-    logger.info(f"[MANAGE] Running: {label}…")
-    from app.tasks import celery_app as ca
-    fn = getattr(ca, fn_name)
-    fn()
-    logger.info(f"[MANAGE] {label} — done ✓")
+
 
 
 # ── status ────────────────────────────────────────────────────────────
@@ -117,14 +119,14 @@ def cmd_status():
 COMMANDS = {
     "init-db":      lambda: asyncio.run(cmd_init_db()),
     "create-admin": cmd_create_admin,
-    "pipeline":     lambda: _run("run_full_pipeline",      "Full pipeline"),
-    "scrape":       lambda: _run("scrape_all_sources",     "Scrape all sources"),
-    "ai":           lambda: _run("process_ai_batch",       "AI enrichment"),
-    "rank":         lambda: _run("update_top_100_ranking", "Top-100 ranking"),
-    "sync":         lambda: _run("sync_to_aws",            "AWS sync"),
-    "cleanup":      lambda: _run("cleanup_old_articles",   "Article cleanup"),
-    "categories":   lambda: _run("update_category_counts", "Category counts"),
-    "social":       lambda: _run("post_to_social",         "Social posting"),
+    "pipeline":     lambda: ca_module.run_full_pipeline(),
+    "scrape":       lambda: ca_module.scrape_all_sources(),
+    "ai":           lambda: ca_module.process_ai_batch(),
+    "rank":         lambda: ca_module.update_top_100_ranking(),
+    "sync":         lambda: ca_module.sync_to_aws(),
+    "cleanup":      lambda: ca_module.cleanup_old_articles(),
+    "categories":   lambda: ca_module.update_category_counts(),
+    "social":       lambda: ca_module.post_to_social(),
     "status":       cmd_status,
 }
 

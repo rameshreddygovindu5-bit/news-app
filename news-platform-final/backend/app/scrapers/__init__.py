@@ -19,11 +19,12 @@ from app.scrapers.oneindia_scraper import OneIndiaScraper
 # International
 from app.scrapers.aljazeera_scraper import AlJazeeraScraper
 from app.scrapers.timesofindia_scraper import TimesOfIndiaScraper
+from app.scrapers.googlenews_scraper import GoogleNewsScraper
 
 __all__ = [
     "ScraperFactory", "BaseScraper", "RSSScaper", "HTMLScraper", "ScrapedArticle",
     "extract_article",
     "GreatAndhraScraper", "EenaduScraper", "SakshiScraper", "TV9TeluguScraper",
     "PrabhaNewsScraper", "Telugu123Scraper", "TeluguTimesScraper", "OneIndiaScraper",
-    "AlJazeeraScraper", "TimesOfIndiaScraper",
+    "AlJazeeraScraper", "TimesOfIndiaScraper", "GoogleNewsScraper",
 ]

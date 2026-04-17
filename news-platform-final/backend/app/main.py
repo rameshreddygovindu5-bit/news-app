@@ -40,15 +40,33 @@ async def lifespan(app: FastAPI):
     # 1. Ensure all DB tables exist and defaults are seeded
     try:
         await create_tables()
+        # Clean up any stuck 'RUNNING' jobs from previous crashes
+        from app.database import SyncSessionLocal
+        from app.models.models import JobExecutionLog
+        from sqlalchemy import update
+        db = SyncSessionLocal()
+        try:
+            db.execute(update(JobExecutionLog).where(JobExecutionLog.status == "RUNNING").values(
+                status="FAILED", 
+                error_summary="Terminated due to application restart"
+            ))
+            db.commit()
+            logger.info("[DB] Cleaned up stuck 'RUNNING' jobs")
+        finally:
+            db.close()
     except Exception as exc:
-        logger.error(f"[DB] Table creation failed: {exc}")
+        logger.error(f"[DB] Table creation/cleanup failed: {exc}")
         logger.error("[DB] Check DATABASE_URL in .env — continuing anyway")
 
     # 2. Start in-process scheduler (no-op if Celery Beat is running externally)
     stop_scheduler = lambda: None  # noqa
     try:
-        from app.tasks.scheduler import start_scheduler, stop_scheduler
-        start_scheduler()
+        # Automated News Pipeline (Scheduled Modes)
+        # This runs the full pipeline once on startup, then follows the 
+        # defined intervals (10-30 mins) while respecting time-window guards.
+        from app.tasks.scheduler import start_scheduler
+        scheduler = start_scheduler(run_immediately=True, enable_intervals=True)
+        app.state.scheduler = scheduler
     except Exception as exc:
         logger.warning(f"[SCHEDULER] Could not start in-process scheduler: {exc}")
 

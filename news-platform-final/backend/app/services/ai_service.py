@@ -228,15 +228,23 @@ def _original_fallback(title: str, content: str) -> Dict:
 def _try_gemini(api_key: str, prompt: str, label: str = "gemini") -> Optional[str]:
     if not api_key: return None
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT,
-            generation_config={"temperature": 0.4, "max_output_tokens": 2048},
+        # Use new Client SDK (v2 API style)
+        from google import genai
+        from google.genai import types
+        
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.4,
+                max_output_tokens=2048,
+            )
         )
-        resp = model.generate_content(prompt)
-        return resp.text
+        if not response or not response.text:
+            return None
+        return response.text
     except Exception as e:
         logger.warning(f"[AI] {label} failed: {e}")
         return None

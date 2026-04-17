@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # ── CANONICAL CATEGORIES (master list — keep in sync everywhere) ──
     CATEGORIES: List[str] = [
-        "Home", "World", "Politics", "Business", "Tech",
+        "Home", "World", "Politics", "Business", "Tech", "India", "U.S.",
         "Health", "Science", "Entertainment", "Events", "Sports",
         "Surveys", "Polls",
     ]
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # ── AI (chain: gemini_primary → gemini_secondary → openai → local → original) ─
     AI_PROVIDER_CHAIN: List[str] = ["gemini", "gemini2", "gemini3", "openai", "local", "original"]
-    AI_BATCH_SIZE: int = 50
+    AI_BATCH_SIZE: int = 200
     AI_CONCURRENCY: int = 8
     AI_MAX_RETRIES: int = 2
     GEMINI_API_KEY: str = "AIzaSyDweaZssdwJRDh7RSC1scmFvRMBtPwOtAY"

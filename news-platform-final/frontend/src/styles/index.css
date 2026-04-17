@@ -216,3 +216,104 @@ body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-dar
   .main-content { max-width: 100%; padding: 16px; }
   .grid-2 { grid-template-columns: 1fr; }
 }
+
+/* ══ ADMIN UI IMPROVEMENTS ══════════════════════════════════════════════ */
+
+/* Better button styles */
+.btn { transition: all 0.15s ease; }
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible { outline: 2px solid var(--india-saffron); outline-offset: 2px; }
+.btn-success { background: var(--india-green); color: #fff; border: none; }
+.btn-success:hover { background: #0d6b04; }
+.btn-primary { background: var(--accent); color: #fff; border: none; }
+.btn-primary:hover { opacity: 0.9; }
+
+/* Table row hover */
+.table tbody tr:hover { background: var(--bg-hover); transition: background 0.12s; }
+.table tbody tr { border-bottom: 1px solid var(--border-light); }
+
+/* Improved modal */
+.modal { animation: modalIn 0.18s ease; }
+@keyframes modalIn { from { opacity:0; transform:scale(0.97) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+.modal-overlay { backdrop-filter: blur(4px); }
+
+/* Status badges */
+.badge { font-size: 10px; padding: 3px 9px; border-radius: 20px; font-weight: 700; letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 4px; }
+.badge-new::before, .badge-enabled::before { content: '●'; font-size: 8px; }
+.badge-deleted::before { content: '●'; font-size: 8px; opacity: 0.7; }
+
+/* Card improvements */
+.card { border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transition: box-shadow 0.2s; }
+
+/* Loading spinner improvement */
+.spinner { border-top-color: var(--india-saffron) !important; }
+
+/* Dashboard stat cards */
+.stat-card { 
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(255,153,51,0.03) 100%);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 20px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+
+/* Form improvements */
+.form-input:focus, .form-textarea:focus, .form-select:focus {
+  box-shadow: 0 0 0 3px rgba(255,153,51,0.15);
+  transition: box-shadow 0.15s;
+}
+
+/* Pagination */
+.pagination button:not(:disabled):hover { 
+  background: var(--india-saffron); 
+  color: #fff; 
+  border-color: var(--india-saffron);
+}
+
+/* Sidebar active item */
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(255,153,51,0.15) 0%, transparent 100%);
+  border-left: 3px solid var(--india-saffron);
+}
+
+/* Page header */
+.page-header h2 { font-size: 22px; font-weight: 800; }
+
+/* Source scrape button */
+.btn-sm { min-width: unset; padding: 4px 10px; font-size: 11px; height: 28px; }
+
+/* India tricolor header bar */
+.india-tricolor-h {
+  height: 4px;
+  background: linear-gradient(90deg, #FF9933 0%, #FF9933 33%, #fff 33%, #fff 66%, #138808 66%, #138808 100%);
+}
+
+/* Quick action buttons */
+.quick-action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
+  cursor: pointer; border: none; transition: all 0.15s;
+}
+
+/* Table container scroll shadow */
+.table-container {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+}
+
+/* Improved empty state */
+.empty-state {
+  text-align: center; padding: 40px; color: var(--text-muted);
+  font-size: 14px; font-style: italic;
+}
+
+/* Media — mobile improvements */
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; gap: 10px; align-items: flex-start; }
+  .table { font-size: 12px; }
+  .modal { width: calc(100vw - 32px) !important; max-width: unset !important; max-height: 90vh; overflow-y: auto; }
+  .btn-group { flex-wrap: wrap; }
+}

@@ -58,6 +58,12 @@ async def _run_ai_and_rank(article_id: int):
             art.rank_score = 500  # High initial score for manual/submitted articles
             await db.commit()
             logger.info(f"[AUTO-AI] Article {article_id} processed + ranked (Y)")
+            # Sync to AWS immediately so local and remote stay in sync
+            try:
+                from app.tasks.celery_app import sync_to_aws
+                sync_to_aws.delay()
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
 
@@ -128,21 +134,17 @@ async def list_articles(
     elif flag:
         filters.append(NewsArticle.flag == flag)
     if has_telugu == 'true':
-        filters.append(NewsArticle.telugu_title != None)
-        filters.append(NewsArticle.telugu_title != '')
-    if telugu_page:
-        regional_kw = or_(
-            NewsArticle.original_title.ilike('%Andhra%'),
-            NewsArticle.original_title.ilike('%Telangana%'),
-            NewsArticle.rephrased_title.ilike('%Andhra%'),
-            NewsArticle.rephrased_title.ilike('%Telangana%'),
-            NewsArticle.original_content.ilike('%Andhra%'),
-            NewsArticle.original_content.ilike('%Telangana%')
-        )
+        filters.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
+    elif telugu_page:
+        # Strictly Telugu page content
+        filters.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
+    else:
+        # Default (Home/English pages): Must have English content
         filters.append(or_(
-            and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
-            regional_kw
+            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
+            NewsArticle.original_language == 'en'
         ))
+
     if date_from: filters.append(NewsArticle.created_at >= date_from)
     if date_to: filters.append(NewsArticle.created_at <= date_to)
     if filters:
@@ -159,11 +161,24 @@ async def list_articles(
 
 
 @router.get("/top-news")
-async def get_top_news(limit: int = Query(500, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
+async def get_top_news(
+    limit: int = Query(500, ge=1, le=1000), 
+    telugu_page: Optional[bool] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     query = select(NewsArticle, NewsSource.name.label("source_name")).join(
         NewsSource, NewsArticle.source_id == NewsSource.id
-    ).where(NewsArticle.flag == "Y", NewsArticle.is_duplicate == False
-    ).order_by(desc(NewsArticle.published_at), desc(NewsArticle.created_at)).limit(limit)
+    ).where(NewsArticle.flag == "Y", NewsArticle.is_duplicate == False)
+    
+    if telugu_page:
+        query = query.where(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
+    else:
+        query = query.where(or_(
+            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
+            NewsArticle.original_language == 'en'
+        ))
+        
+    query = query.order_by(desc(NewsArticle.published_at), desc(NewsArticle.created_at)).limit(limit)
     rows = (await db.execute(query)).all()
     return [article_to_response(r[0], r[1]) for r in rows]
 
@@ -171,20 +186,31 @@ async def get_top_news(limit: int = Query(500, ge=1, le=1000), db: AsyncSession 
 @router.get("/by-category/{category}")
 async def get_articles_by_category(
     category: str, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    telugu_page: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     base = [NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
+    
+    if telugu_page:
+        base.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
+    else:
+        base.append(or_(
+            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
+            NewsArticle.original_language == 'en'
+        ))
+
     total_result = await db.execute(select(func.count(NewsArticle.id)).where(and_(*base)))
     total = total_result.scalar() or 0
     
-    if total == 0:
-        # Fallback: take latest 2 months news for this category
+    if total == 0 and not telugu_page:
+        # Fallback for English: take latest 2 months news for this category
         from datetime import timedelta
         two_months_ago = datetime.now(timezone.utc) - timedelta(days=60)
         base = [
             NewsArticle.category == category, 
             NewsArticle.flag.in_(["N", "A", "Y"]), 
             NewsArticle.is_duplicate == False,
+            NewsArticle.original_language == 'en',
             or_(NewsArticle.published_at >= two_months_ago, NewsArticle.created_at >= two_months_ago)
         ]
         total_result = await db.execute(select(func.count(NewsArticle.id)).where(and_(*base)))
@@ -412,6 +438,46 @@ async def delete_article(article_id: int, db: AsyncSession = Depends(get_db), ad
     except: pass
 
     return {"message": "Article deleted (soft)", "id": article_id}
+
+
+@router.post("/{article_id}/reprocess", status_code=202)
+async def reprocess_article(
+    article_id: int, db: AsyncSession = Depends(get_db),
+    admin: AdminUser = Depends(require_admin),
+):
+    """Re-queue a single article through the full AI pipeline (rephrase + Telugu + category + slug)."""
+    article = (await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))).scalar_one_or_none()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Reset AI status so the batch worker picks it up again
+    article.ai_status = "pending"
+    article.ai_error_count = 0
+    await db.commit()
+
+    # Try Celery async first; fall back to running directly in thread
+    try:
+        from app.tasks.celery_app import process_ai_batch
+        process_ai_batch.delay()
+        return {"message": f"Article {article_id} queued for AI reprocessing (async)", "mode": "celery"}
+    except Exception:
+        import asyncio
+        from app.tasks.celery_app import worker_process_ai
+        try:
+            result = await asyncio.to_thread(worker_process_ai, article_id)
+            if result:
+                try:
+                    from app.tasks.celery_app import sync_to_aws
+                    sync_to_aws.delay()
+                except Exception:
+                    pass
+                return {"message": f"Article {article_id} reprocessed (sync)", "mode": "sync"}
+            else:
+                raise HTTPException(status_code=500, detail="AI reprocessing failed — check AI credentials")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Reprocess failed: {str(e)[:200]}")
 
 
 @router.post("/manual", status_code=201)
