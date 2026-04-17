@@ -20,6 +20,17 @@ from app.services.category_service import category_service
 
 logger = logging.getLogger(__name__)
 
+def trigger_sync():
+    """Trigger AWS sync with fallback to synchronous execution."""
+    try:
+        from app.tasks.celery_app import sync_to_aws
+        sync_to_aws.delay()
+    except Exception:
+        # Fallback to direct thread if Celery is down
+        import threading
+        from app.tasks.celery_app import sync_to_aws as sync_func
+        threading.Thread(target=sync_func, daemon=True).start()
+
 def _make_slug(title: str) -> str:
     import re
     s = title.lower()
@@ -273,12 +284,8 @@ async def approve_article(
 
     await db.commit()
 
-    # Automation: Trigger AI process or Sync if approved
-    from app.tasks.celery_app import sync_to_aws
-    if data.action == "approve_direct":
-        try:
-            sync_to_aws.delay()
-        except: pass
+    # Automation: Trigger sync for all approval/rejection actions
+    trigger_sync()
 
     return {"message": f"Article {data.action}d", "id": article_id, "new_flag": article.flag}
 
@@ -413,12 +420,8 @@ async def update_article(
     await db.commit()
     await db.refresh(article)
 
-    # Automation: If article is public (A or Y), trigger AWS sync
-    if article.flag in ["A", "Y"]:
-        from app.tasks.celery_app import sync_to_aws
-        try:
-            sync_to_aws.delay()
-        except: pass
+    # Automation: Trigger AWS sync for all updates
+    trigger_sync()
 
     return {"message": "Article updated", "id": article_id}
 

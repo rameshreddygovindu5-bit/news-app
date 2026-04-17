@@ -14,9 +14,18 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.models import Wish, AdminUser
 from app.services.auth_service import get_current_user, require_admin
-from app.tasks.celery_app import sync_to_aws
-
 logger = logging.getLogger(__name__)
+
+def trigger_sync():
+    """Trigger AWS sync with fallback to synchronous execution."""
+    try:
+        from app.tasks.celery_app import sync_to_aws
+        sync_to_aws.delay()
+    except Exception:
+        # Fallback to direct thread if Celery is down
+        import threading
+        from app.tasks.celery_app import sync_to_aws as sync_func
+        threading.Thread(target=sync_func, daemon=True).start()
 
 router = APIRouter(prefix="/api/wishes", tags=["Wishes & Greetings"])
 
@@ -116,6 +125,7 @@ async def like_wish(wish_id: int, db: AsyncSession = Depends(get_db)):
     await db.refresh(wish)
     
     logger.info(f"[WISH] Liked: {wish_id}. New count: {wish.likes_count}")
+    trigger_sync()
     return wish
 
 
@@ -158,9 +168,7 @@ async def create_wish(
     await db.commit()
     await db.refresh(wish)
     logger.info(f"[WISH] Created: '{data.title}' by {user.username}")
-    try:
-        sync_to_aws.delay()
-    except: pass
+    trigger_sync()
     return wish
 
 
@@ -181,9 +189,7 @@ async def update_wish(
 
     await db.commit()
     await db.refresh(wish)
-    try:
-        sync_to_aws.delay()
-    except: pass
+    trigger_sync()
     return wish
 
 
@@ -200,7 +206,5 @@ async def delete_wish(
 
     wish.is_active = False
     await db.commit()
-    try:
-        sync_to_aws.delay()
-    except: pass
+    trigger_sync()
     return {"message": f"Wish '{wish.title}' deactivated", "id": wish_id}

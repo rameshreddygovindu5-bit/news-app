@@ -169,6 +169,11 @@ def scrape_all_sources(ignore_window: bool = False):
         logger.error(f"[SCRAPE] Fatal: {e}"); complete_job(db, log, 0, 1, str(e))
     finally:
         db.close()
+    
+    # Trigger sync after scrape complete
+    try: sync_to_aws.delay()
+    except: pass
+
     _banner("SCRAPE ALL SOURCES", False)
 
 @celery_app.task(name="app.tasks.celery_app.scrape_source")
@@ -279,6 +284,11 @@ def process_ai_batch():
         logger.error(f"[AI] Fatal: {e}"); complete_job(db, log, 0, 1, str(e))
     finally:
         db.close()
+    
+    # Trigger sync after AI batch complete
+    try: sync_to_aws.delay()
+    except: pass
+
     _banner("AI ENRICHMENT", False)
 
 def worker_process_ai(article_id: int) -> bool:
@@ -405,6 +415,11 @@ def update_top_100_ranking():
         db.rollback(); logger.error(f"[RANK] {e}"); complete_job(db, log, 0, 0, str(e))
     finally:
         db.close()
+    
+    # Trigger sync after Ranking complete
+    try: sync_to_aws.delay()
+    except: pass
+
     _banner("TOP-100 RANKING", False)
 
 # ── TASK 4: AWS SYNC ──────────────────────────────────────────────────
