@@ -289,36 +289,38 @@ export default function NewsDetail() {
             </div>
           </div>
 
+          <aside className="lg:col-span-3">
             <div className="sticky top-28 space-y-8">
               {/* Sidebar Ad Unit */}
               <GoogleAdUnit slot="1357924680" format="rectangle" className="rounded-xl border border-zinc-100 bg-white p-2" />
 
               {/* About box */}
               <div className="p-5 bg-zinc-50 border-t-2 border-[var(--pf-navy)]">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-900 mb-4">
-                About this article
-              </h4>
-              <div className="space-y-3 text-xs">
-                <div className="flex gap-2">
-                  <div className="w-1 bg-[var(--pf-green)] shrink-0 rounded-full" />
-                  <p className="font-semibold text-zinc-600">Publisher: Peoples Feedback</p>
-                </div>
-                <div className="flex gap-2">
-                  <div className="w-1 bg-[var(--pf-saffron)] shrink-0 rounded-full" />
-                  <p className="font-semibold text-zinc-600">Category: {article.category || "General"}</p>
-                </div>
-                {article.original_language && article.original_language !== "en" && (
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-900 mb-4">
+                  About this article
+                </h4>
+                <div className="space-y-3 text-xs">
                   <div className="flex gap-2">
-                    <div className="w-1 bg-zinc-300 shrink-0 rounded-full" />
-                    <p className="font-semibold text-zinc-600">Source language: {article.original_language.toUpperCase()}</p>
+                    <div className="w-1 bg-[var(--pf-green)] shrink-0 rounded-full" />
+                    <p className="font-semibold text-zinc-600">Publisher: Peoples Feedback</p>
                   </div>
-                )}
-                {hasTE && (
                   <div className="flex gap-2">
                     <div className="w-1 bg-[var(--pf-saffron)] shrink-0 rounded-full" />
-                    <p className="font-semibold text-zinc-600 telugu">తెలుగు అనువాదం అందుబాటులో ఉంది ✓</p>
+                    <p className="font-semibold text-zinc-600">Category: {article.category || "General"}</p>
                   </div>
-                )}
+                  {article.original_language && article.original_language !== "en" && (
+                    <div className="flex gap-2">
+                      <div className="w-1 bg-zinc-300 shrink-0 rounded-full" />
+                      <p className="font-semibold text-zinc-600">Source language: {article.original_language.toUpperCase()}</p>
+                    </div>
+                  )}
+                  {hasTE && (
+                    <div className="flex gap-2">
+                      <div className="w-1 bg-[var(--pf-saffron)] shrink-0 rounded-full" />
+                      <p className="font-semibold text-zinc-600 telugu">తెలుగు అనువాదం అందుబాటులో ఉంది ✓</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </aside>
