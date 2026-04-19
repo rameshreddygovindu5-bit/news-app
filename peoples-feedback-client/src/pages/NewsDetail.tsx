@@ -19,7 +19,6 @@ import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { ShareMenu, ShareBar } from "@/components/news/ShareMenu";
 import { BackToTop } from "@/components/news/BackToTop";
 import { newsApi } from "@/lib/api";
-import { GoogleAdUnit } from "@/components/shared/GoogleAdUnit";
 import type { NewsArticle, ArticleListResponse } from "@/types/news";
 import { getTitle, getContent, getImage, getSummary, categoryPlaceholder, hasTelugu, readTime } from "@/types/news";
 
@@ -236,8 +235,6 @@ export default function NewsDetail() {
             Peoples Feedback Newsroom
           </p>
           
-          {/* Header Ad unit */}
-          <GoogleAdUnit slot="1122334455" className="mt-8" />
         </div>
 
         {/* ── Content + sidebar layout ── */}
@@ -260,9 +257,6 @@ export default function NewsDetail() {
               className={lang === 'te' ? 'article-content-telugu' : 'article-content'}
               dangerouslySetInnerHTML={{ __html: content }}
             />
-
-            {/* Mid-article Ad unit */}
-            <GoogleAdUnit slot="5544332211" format="fluid" className="my-8" />
 
             {/* Tags */}
             {(article.tags || []).length > 0 && (
@@ -291,8 +285,6 @@ export default function NewsDetail() {
 
           <aside className="lg:col-span-3">
             <div className="sticky top-28 space-y-8">
-              {/* Sidebar Ad Unit */}
-              <GoogleAdUnit slot="1357924680" format="rectangle" className="rounded-xl border border-zinc-100 bg-white p-2" />
 
               {/* About box */}
               <div className="p-5 bg-zinc-50 border-t-2 border-[var(--pf-navy)]">

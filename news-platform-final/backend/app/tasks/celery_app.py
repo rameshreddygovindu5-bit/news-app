@@ -127,8 +127,9 @@ def content_hash(source_id, title): return hashlib.sha256(f"{source_id}{normaliz
 def _trigger_sync_robust():
     """Trigger AWS sync with fallback to thread if Celery worker is down."""
     try:
-        sync_to_aws.delay()
-        logger.info("[SYNC] Queued via Celery")
+        # Trigger directly with a small delay so other tasks can commit
+        sync_to_aws.apply_async(countdown=10)
+        logger.info("[SYNC] Queued via Celery (apply_async)")
     except Exception as e:
         import threading
         logger.warning(f"[SYNC] Celery delay failed ({e}) — falling back to thread")
@@ -599,9 +600,17 @@ def sync_to_aws():
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
             db.add(meta); db.commit()
 
-        # Added 2-minute overlap to ensure no records are missed due to transaction timing
-        sync_cutoff = meta.last_sync_at - timedelta(minutes=2)
-        records = db.query(NewsArticle).filter(NewsArticle.updated_at > sync_cutoff).all()
+        # Added 5-minute overlap to ensure no records are missed due to transaction timing
+        sync_cutoff = meta.last_sync_at - timedelta(minutes=5)
+        
+        # Priority: Ensure ALL 'Top News' (flag='Y') are ALWAYS synced if updated in last 48h
+        # regardless of incremental meta state, as these are critical for homepage populated.
+        high_priority_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        
+        records = db.query(NewsArticle).filter(
+            (NewsArticle.updated_at > sync_cutoff) | 
+            ((NewsArticle.flag == "Y") & (NewsArticle.updated_at > high_priority_cutoff))
+        ).all()
         
         if not records:
             cur.close(); conn.close()
@@ -612,7 +621,7 @@ def sync_to_aws():
         sync_at = datetime.now(timezone.utc)
         import json
         SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,ai_status,processed_at,ai_error_count,created_at,updated_at)
-                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 VALUES %s
                  ON CONFLICT (original_url) DO UPDATE SET
                    original_title=EXCLUDED.original_title, original_content=EXCLUDED.original_content,
                    rephrased_title=EXCLUDED.rephrased_title, rephrased_content=EXCLUDED.rephrased_content,
@@ -621,43 +630,60 @@ def sync_to_aws():
                    image_url=EXCLUDED.image_url, author=EXCLUDED.author, rank_score=EXCLUDED.rank_score,
                    ai_status=EXCLUDED.ai_status, processed_at=EXCLUDED.processed_at, 
                    ai_error_count=EXCLUDED.ai_error_count, updated_at=EXCLUDED.updated_at"""
+        from psycopg2.extras import execute_values
+        
+        # Prepare list of tuples for bulk execution
+        data_to_sync = []
         for art in records:
-            try:
-                # Type conversions for Postgres
-                tags = art.tags
-                if tags and isinstance(tags, str):
-                    try: tags = json.loads(tags)
-                    except: tags = []
-                elif not tags:
-                    tags = []
-                
-                cur.execute(SQL, (
-                    art.source_id, art.original_title, art.original_content, art.original_url,
-                    art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
-                    art.category, art.slug, tags, art.flag, art.image_url, art.author,
-                    art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
-                    getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
-                    art.ai_status, art.processed_at, art.ai_error_count,
-                    art.created_at, art.updated_at,
-                ))
-                ok += 1
-            except Exception as e:
-                # If slug collision on a new URL, try appending suffix
-                if "slug" in str(e).lower() and "unique" in str(e).lower():
-                    try:
-                        new_slug = f"{art.slug}-{uuid.uuid4().hex[:4]}"
-                        cur.execute(SQL, (
-                            art.source_id, art.original_title, art.original_content, art.original_url,
-                            art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
-                            art.category, new_slug, tags, art.flag, art.image_url, art.author,
-                            art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
-                            getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
-                            art.ai_status, art.processed_at, art.ai_error_count,
-                            art.created_at, art.updated_at,
-                        ))
-                        ok += 1; continue
-                    except: pass
-                logger.error(f"[AWS] Art {art.id}: {e}"); err += 1
+            tags = art.tags
+            if tags and isinstance(tags, str):
+                try: tags = json.loads(tags)
+                except: tags = []
+            elif not tags:
+                tags = []
+            
+            data_to_sync.append((
+                art.source_id, art.original_title, art.original_content, art.original_url,
+                art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
+                art.category, art.slug, tags, art.flag, art.image_url, art.author,
+                art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
+                getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                art.ai_status, art.processed_at, art.ai_error_count,
+                art.created_at, art.updated_at,
+            ))
+
+        # Bulk execute with ON CONFLICT support
+        try:
+            execute_values(cur, SQL, data_to_sync)
+            ok = len(data_to_sync)
+        except Exception as e:
+            logger.warning(f"[AWS] Bulk sync failed ({e}) — falling back to sequential")
+            conn.rollback() # Rollback the failed bulk attempt
+            ok = err = 0
+            # Define sequential SQL with individual placeholders
+            SQL_SINGLE = SQL.replace("VALUES %s", "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)")
+            for art in records:
+                try:
+                    tags = art.tags
+                    if tags and isinstance(tags, str):
+                        try: tags = json.loads(tags)
+                        except: tags = []
+                    elif not tags:
+                        tags = []
+                    
+                    cur.execute(SQL_SINGLE, (
+                        art.source_id, art.original_title, art.original_content, art.original_url,
+                        art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
+                        art.category, art.slug, tags, art.flag, art.image_url, art.author,
+                        art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
+                        getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                        art.ai_status, art.processed_at, art.ai_error_count,
+                        art.created_at, art.updated_at,
+                    ))
+                    ok += 1
+                except Exception as e2:
+                    logger.error(f"[AWS] Art {art.id} sequential FAIL: {e2}")
+                    err += 1
 
         cur.close(); conn.close()
         meta.last_sync_at=sync_at; meta.last_rows_ok=ok; meta.last_rows_err=err; db.commit()
