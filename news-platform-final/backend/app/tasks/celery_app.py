@@ -124,6 +124,16 @@ def _banner(label, start=True):
 def normalize_title(t): return re.sub(r'[^\w\s]','',t.lower()).strip() if t else ""
 def content_hash(source_id, title): return hashlib.sha256(f"{source_id}{normalize_title(title)}".encode()).hexdigest()
 
+def _trigger_sync_robust():
+    """Trigger AWS sync with fallback to thread if Celery worker is down."""
+    try:
+        sync_to_aws.delay()
+        logger.info("[SYNC] Queued via Celery")
+    except Exception as e:
+        import threading
+        logger.warning(f"[SYNC] Celery delay failed ({e}) — falling back to thread")
+        threading.Thread(target=sync_to_aws, daemon=True).start()
+
 # ── TASK 1: SCRAPE ────────────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.scrape_all_sources")
 def scrape_all_sources(ignore_window: bool = False):
@@ -131,6 +141,10 @@ def scrape_all_sources(ignore_window: bool = False):
     db = get_db()
     log = log_job(db, "scrape_sources")
     if not log: return
+    # Skip scraping on AWS (Local is master)
+    if not settings.IS_LOCAL_DEV:
+        complete_job(db, log, 0, 0, "Skipped on AWS")
+        db.close(); return
     try:
         q = db.query(NewsSource).filter(NewsSource.is_enabled==True, NewsSource.is_paused==False)
         if settings.ENABLED_SOURCES:
@@ -172,8 +186,7 @@ def scrape_all_sources(ignore_window: bool = False):
         db.close()
     
     # Trigger sync after scrape complete
-    try: sync_to_aws.delay()
-    except: pass
+    _trigger_sync_robust()
 
     _banner("SCRAPE ALL SOURCES", False)
 
@@ -267,6 +280,10 @@ def process_ai_batch():
     db = get_db()
     log = log_job(db, "ai_enrichment")
     if not log: return
+    # Skip AI processing on AWS (Local is master)
+    if not settings.IS_LOCAL_DEV:
+        complete_job(db, log, 0, 0, "Skipped on AWS")
+        db.close(); return
     try:
         subq = db.query(NewsArticle.id).filter(NewsArticle.ai_status.in_(["pending","unknown"]), NewsArticle.is_duplicate==False).order_by(func.random()).limit(settings.AI_BATCH_SIZE).subquery()
         db.execute(update(NewsArticle).where(NewsArticle.id.in_(select(subq))).values(ai_status="processing"))
@@ -287,8 +304,7 @@ def process_ai_batch():
         db.close()
     
     # Trigger sync after AI batch complete
-    try: sync_to_aws.delay()
-    except: pass
+    _trigger_sync_robust()
 
     _banner("AI ENRICHMENT", False)
 
@@ -332,6 +348,10 @@ def update_top_100_ranking():
     db = get_db()
     log = log_job(db, "ranking")
     if not log: return
+    # Skip ranking on AWS (Local is master)
+    if not settings.IS_LOCAL_DEV:
+        complete_job(db, log, 0, 0, "Skipped on AWS")
+        db.close(); return
     try:
         # Reset flags
         db.execute(update(NewsArticle).where(NewsArticle.flag=="Y").values(flag="A"))
@@ -425,8 +445,7 @@ def update_top_100_ranking():
         db.close()
     
     # Trigger sync after Ranking complete
-    try: sync_to_aws.delay()
-    except: pass
+    _trigger_sync_robust()
 
     _banner("TOP-100 RANKING", False)
 
@@ -580,23 +599,28 @@ def sync_to_aws():
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
             db.add(meta); db.commit()
 
-        records = db.query(NewsArticle).filter(NewsArticle.updated_at>meta.last_sync_at).all()
+        # Added 2-minute overlap to ensure no records are missed due to transaction timing
+        sync_cutoff = meta.last_sync_at - timedelta(minutes=2)
+        records = db.query(NewsArticle).filter(NewsArticle.updated_at > sync_cutoff).all()
+        
         if not records:
             cur.close(); conn.close()
-            complete_job(db, log, 0, 0, "No delta"); return
+            complete_job(db, log, 0, 0, "No delta")
+            db.close(); return
 
         ok = err = 0
         sync_at = datetime.now(timezone.utc)
         import json
-        SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,created_at,updated_at)
-                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,ai_status,processed_at,ai_error_count,created_at,updated_at)
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                  ON CONFLICT (original_url) DO UPDATE SET
                    original_title=EXCLUDED.original_title, original_content=EXCLUDED.original_content,
                    rephrased_title=EXCLUDED.rephrased_title, rephrased_content=EXCLUDED.rephrased_content,
                    telugu_title=EXCLUDED.telugu_title, telugu_content=EXCLUDED.telugu_content,
                    category=EXCLUDED.category, slug=EXCLUDED.slug, tags=EXCLUDED.tags, flag=EXCLUDED.flag,
                    image_url=EXCLUDED.image_url, author=EXCLUDED.author, rank_score=EXCLUDED.rank_score,
-                   updated_at=EXCLUDED.updated_at"""
+                   ai_status=EXCLUDED.ai_status, processed_at=EXCLUDED.processed_at, 
+                   ai_error_count=EXCLUDED.ai_error_count, updated_at=EXCLUDED.updated_at"""
         for art in records:
             try:
                 # Type conversions for Postgres
@@ -613,6 +637,7 @@ def sync_to_aws():
                     art.category, art.slug, tags, art.flag, art.image_url, art.author,
                     art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
                     getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                    art.ai_status, art.processed_at, art.ai_error_count,
                     art.created_at, art.updated_at,
                 ))
                 ok += 1
@@ -627,6 +652,7 @@ def sync_to_aws():
                             art.category, new_slug, tags, art.flag, art.image_url, art.author,
                             art.content_hash, bool(art.is_duplicate), art.duplicate_of_id, art.rank_score,
                             getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                            art.ai_status, art.processed_at, art.ai_error_count,
                             art.created_at, art.updated_at,
                         ))
                         ok += 1; continue
