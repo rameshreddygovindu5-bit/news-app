@@ -84,11 +84,12 @@ def log_job(db, job_name, triggered_by="cron"):
     db.execute(update(JobExecutionLog).where(JobExecutionLog.status=="RUNNING", JobExecutionLog.started_at<stale).values(status="FAILED", ended_at=func.now(), error_summary="Stale lock"))
     db.commit()
     
-    # Check if already running
-    running = db.query(JobExecutionLog).filter(JobExecutionLog.job_name==job_name, JobExecutionLog.status=="RUNNING").first()
-    if running:
-        logger.info(f"[JOB] {job_name} already running — skip")
-        return None
+    # Check if already running (Skip lock for aws_sync to allow real-time API triggers)
+    if not job_name.startswith("aws_sync"):
+        running = db.query(JobExecutionLog).filter(JobExecutionLog.job_name==job_name, JobExecutionLog.status=="RUNNING").first()
+        if running:
+            logger.info(f"[JOB] {job_name} already running — skip")
+            return None
     
     # Insert new job log (works with both SQLite and PostgreSQL)
     log_entry = JobExecutionLog(
@@ -301,7 +302,14 @@ def worker_process_ai(article_id: int) -> bool:
         art.rephrased_content = res["rephrased_content"]
         art.telugu_title = res.get("telugu_title", "")
         art.telugu_content = res.get("telugu_content", "")
-        art.category = res["category"]
+        
+        # Priority Category Logic: Respect source-defined target category if not "Home"
+        target_cat = art.source.scraper_config.get("target_category") if art.source and art.source.scraper_config else None
+        if target_cat and target_cat not in ["Home", "General"]:
+            art.category = target_cat
+        else:
+            art.category = res["category"]
+
         art.slug = res.get("slug") or art.slug
         art.tags = res.get("tags", [])
         art.ai_status = "completed"
@@ -540,7 +548,33 @@ def sync_to_aws():
         except Exception as e:
             logger.error(f"[AWS] Wishes Sync Error: {e}")
 
-        # 5. Articles (delta)
+        # 6. Polls
+        try:
+            # Tables exist?
+            cur.execute("CREATE TABLE IF NOT EXISTS polls (id SERIAL PRIMARY KEY, question VARCHAR(500) NOT NULL, description TEXT, is_active BOOLEAN DEFAULT TRUE, expires_at TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);")
+            cur.execute("CREATE TABLE IF NOT EXISTS poll_options (id SERIAL PRIMARY KEY, poll_id INTEGER REFERENCES polls(id) ON DELETE CASCADE, option_text VARCHAR(255) NOT NULL, votes_count INTEGER DEFAULT 0);")
+            
+            from app.models.models import Poll, PollOption
+            local_polls = db.query(Poll).all()
+            local_poll_ids = [p.id for p in local_polls]
+            for p in local_polls:
+                cur.execute("INSERT INTO polls (id,question,description,is_active,expires_at,created_at) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET question=EXCLUDED.question,description=EXCLUDED.description,is_active=EXCLUDED.is_active,expires_at=EXCLUDED.expires_at",
+                            (p.id, p.question, p.description, p.is_active, p.expires_at, p.created_at))
+            
+            # Options
+            local_options = db.query(PollOption).all()
+            local_opt_ids = [o.id for o in local_options]
+            for o in local_options:
+                cur.execute("INSERT INTO poll_options (id,poll_id,option_text,votes_count) VALUES (%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET option_text=EXCLUDED.option_text,votes_count=EXCLUDED.votes_count",
+                            (o.id, o.poll_id, o.option_text, o.votes_count))
+            
+            # Prune
+            if local_poll_ids: cur.execute("UPDATE polls SET is_active=FALSE WHERE id NOT IN %s", (tuple(local_poll_ids),))
+            if local_opt_ids: cur.execute("DELETE FROM poll_options WHERE id NOT IN %s", (tuple(local_opt_ids),))
+        except Exception as e:
+            logger.error(f"[AWS] Polls Sync Error: {e}")
+
+        # 7. Articles (delta)
         meta = db.query(SyncMetadata).filter(SyncMetadata.target=="AWS_PROD").first()
         if not meta:
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
@@ -603,6 +637,27 @@ def sync_to_aws():
         meta.last_sync_at=sync_at; meta.last_rows_ok=ok; meta.last_rows_err=err; db.commit()
         complete_job(db, log, ok, err)
         logger.info(f"[AWS] Synced {ok} ok, {err} err")
+
+        # 8. Pruning: Sync Deletions
+        try:
+            conn = psycopg2.connect(host=settings.AWS_DB_HOST, port=settings.AWS_DB_PORT, dbname=settings.AWS_DB_NAME, user=settings.AWS_DB_USER, password=settings.AWS_DB_PASSWORD)
+            cur = conn.cursor()
+            
+            # Deletions (Local flag 'D' -> Remote flag 'D')
+            deleted_locally = db.query(NewsArticle.original_url).filter(NewsArticle.flag == "D").all()
+            if deleted_locally:
+                deleted_urls = [r[0] for r in deleted_locally]
+                # Update in chunks of 500
+                for i in range(0, len(deleted_urls), 500):
+                    chunk = deleted_urls[i:i+500]
+                    cur.execute("UPDATE news_articles SET flag='D' WHERE original_url IN %s", (tuple(chunk),))
+                conn.commit()
+            
+            # Physical Cleanup (If it doesn't exist locally at all, hide it in AWS)
+            # We don't want to delete from AWS if it's just 'archived' locally, but the user expects SYNC.
+            cur.close(); conn.close()
+        except Exception as e:
+            logger.error(f"[AWS] Pruning Error: {e}")
     except Exception as e:
         logger.error(f"[AWS] Fatal: {e}"); complete_job(db, log, 0, 0, str(e))
     finally:

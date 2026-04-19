@@ -58,17 +58,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"[DB] Table creation/cleanup failed: {exc}")
         logger.error("[DB] Check DATABASE_URL in .env — continuing anyway")
 
-    # 2. Start in-process scheduler (no-op if Celery Beat is running externally)
+    # 2. Start in-process scheduler (ONLY on local dev)
+    # On AWS/Production, the local environment pushes data, so the server
+    # should remain passive to save resources.
     stop_scheduler = lambda: None  # noqa
-    try:
-        # Automated News Pipeline (Scheduled Modes)
-        # This runs the full pipeline once on startup, then follows the 
-        # defined intervals (10-30 mins) while respecting time-window guards.
-        from app.tasks.scheduler import start_scheduler
-        scheduler = start_scheduler(run_immediately=True, enable_intervals=True)
-        app.state.scheduler = scheduler
-    except Exception as exc:
-        logger.warning(f"[SCHEDULER] Could not start in-process scheduler: {exc}")
+    if settings.IS_LOCAL_DEV:
+        try:
+            from app.tasks.scheduler import start_scheduler
+            scheduler = start_scheduler(run_immediately=True, enable_intervals=True)
+            app.state.scheduler = scheduler
+        except Exception as exc:
+            logger.warning(f"[SCHEDULER] Could not start in-process scheduler: {exc}")
+    else:
+        logger.info("[SCHEDULER] Disabled (Production Mode — passive server)")
 
     yield
 

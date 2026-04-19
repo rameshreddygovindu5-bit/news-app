@@ -10,7 +10,20 @@ from app.models.models import Poll, PollOption, AdminUser
 from app.schemas.polls import Poll as PollSchema, PollCreate, VoteRequest
 from app.services.auth_service import get_current_user
 
+import logging
 router = APIRouter(prefix="/api/polls", tags=["Polls"])
+logger = logging.getLogger(__name__)
+
+def trigger_sync():
+    """Trigger AWS sync with fallback to synchronous execution."""
+    try:
+        from app.tasks.celery_app import sync_to_aws
+        sync_to_aws.delay()
+    except Exception:
+        # Fallback to direct thread if Celery is down
+        import threading
+        from app.tasks.celery_app import sync_to_aws as sync_func
+        threading.Thread(target=sync_func, daemon=True).start()
 
 
 @router.get("/", response_model=List[PollSchema])
@@ -57,6 +70,7 @@ async def create_poll(
         select(PollOption).where(PollOption.poll_id == db_poll.id)
     )
     db_poll.options = opts_result.scalars().all()
+    trigger_sync()
     return db_poll
 
 
@@ -79,6 +93,7 @@ async def vote_poll(
 
     opt.votes_count = (opt.votes_count or 0) + 1
     await db.commit()
+    trigger_sync()
     return {"status": "success", "message": "Vote recorded"}
 
 

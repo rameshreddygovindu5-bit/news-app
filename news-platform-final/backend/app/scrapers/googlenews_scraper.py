@@ -1,18 +1,19 @@
 """
-Google News Scraper (v6)
-High-fidelity extraction using pygooglenews + googlenewsdecoder (new_decoderv1) + newspaper3k.
-Optimized for 100% format compliance.
+Google News Scraper (v7) — Dependency-Free Edition
+Uses feedparser directly to avoid pygooglenews conflicts.
+High-fidelity extraction using googlenewsdecoder (new_decoderv1) + newspaper3k.
 """
 
 import asyncio
 import logging
 import requests
+import feedparser
+import re
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 from app.scrapers.base_scraper import BaseScraper, ScrapedArticle
-from pygooglenews import GoogleNews
 from newspaper import Article, Config
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,8 @@ logger = logging.getLogger(__name__)
 class GoogleNewsScraper(BaseScraper):
     def __init__(self, source_config: Dict[str, Any]):
         super().__init__(source_config)
-        self.gn = GoogleNews(lang='en', country='US')
         self.headers = {
-            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/437.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         }
         self.session = requests.Session()
         self.article_config = Config()
@@ -31,18 +31,32 @@ class GoogleNewsScraper(BaseScraper):
         self.article_config.memoize_articles = False
 
     def resolve_url(self, google_url: str) -> str:
-        """Standard pygooglenews links are redirects; resolve to actual URL."""
+        """Resolve Google News redirect links to actual article URLs."""
+        # 1. Try Decoder (Modern way)
         try:
             from googlenewsdecoder import new_decoderv1
             res = new_decoderv1(google_url, interval=1)
             if res.get("status") and res.get("decoded_url"):
                 return res["decoded_url"]
-        except Exception as e:
-            logger.info(f"[GNews] Decoder failed for {google_url[:50]}: {e}")
+        except Exception:
+            pass
+
+        # 2. Fallback: Manual Resolve (User's logic)
+        try:
+            response = self.session.get(google_url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                if "url=" in response.text.lower():
+                    match = re.search(r'url=([^\s"]+)', response.text, re.IGNORECASE)
+                    if match: 
+                        u = match.group(1).replace('"', '').replace("'", "")
+                        if u.startswith('http'): return u
+                return response.url
+        except:
+            pass
         return google_url
 
     def format_html_content(self, text: str) -> str:
-        """Standard Antigravity Bold style formatting."""
+        """Antigravity Style: Bold first paragraph, wrap in <p> labels."""
         if not text: return ""
         paragraphs = [p.strip() for p in text.split('\n') if len(p.strip()) > 30]
         html = ""
@@ -54,7 +68,7 @@ class GoogleNewsScraper(BaseScraper):
         return html
 
     def extract_source(self, url: str) -> str:
-        """Extracts clean domain name from URL (e.g., reuters.com)."""
+        """Extract domain from URL."""
         try:
             domain = urlparse(url).netloc
             return domain.replace("www.", "")
@@ -62,72 +76,64 @@ class GoogleNewsScraper(BaseScraper):
             return "Unknown Source"
 
     def get_friendly_category(self, topic: Optional[str], query: Optional[str]) -> str:
-        """Maps config inputs to requested standard categories."""
-        if query and "india" in query.lower():
-            return "India"
-        if topic:
-            mapping = {
-                "WORLD": "World",
-                "NATION": "U.S.",
-                "BUSINESS": "Business",
-                "TECHNOLOGY": "Technology"
-            }
-            return mapping.get(topic.upper(), "General")
+        mapping = {"WORLD": "World", "NATION": "U.S.", "BUSINESS": "Business", "TECHNOLOGY": "Technology"}
+        if query and "india" in query.lower(): return "India"
+        if topic: return mapping.get(topic.upper(), "General")
         return "General"
 
     async def scrape(self) -> List[ScrapedArticle]:
         articles = []
         topic = self.scraper_config.get("topic")
         search_query = self.scraper_config.get("search_query")
-        max_limit = self.scraper_config.get("max_articles", 100)
-        
-        category = self.get_friendly_category(topic, search_query)
+        max_limit = self.scraper_config.get("max_articles", 5) 
 
-        logger.info(f"[GNews] Scraping {self.source_name} Category")
+        # Construct RSS URL
+        if topic:
+            rss_url = f"https://news.google.com/rss/headlines/section/topic/{topic.upper()}?hl=en-US&gl=US&ceid=US:en"
+        elif search_query:
+            rss_url = f"https://news.google.com/rss/search?q={quote(search_query)}&hl=en-US&gl=US&ceid=US:en"
+        else:
+            rss_url = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+
+        logger.info(f"[GNews] Fetching RSS: {rss_url}")
         try:
-            if topic:
-                feed = self.gn.topic_headlines(topic.upper())
-            elif search_query:
-                feed = self.gn.search(search_query, when='24h')
-            else:
-                feed = self.gn.top_headlines()
-            
+            feed = await asyncio.to_thread(feedparser.parse, rss_url)
             entries = feed.get('entries', [])[:max_limit]
         except Exception as e:
-            logger.error(f"[GNews] RSS Fetch Error: {e}")
+            logger.error(f"[GNews] RSS Error: {e}")
             return []
+
+        category = self.get_friendly_category(topic, search_query)
 
         for entry in entries:
             try:
-                # 1. Resolve URL
-                logger.info(f"[GNews] Resolving: {entry.get('title', '...')[:40]}")
-                url = await asyncio.to_thread(self.resolve_url, entry.get('link'))
+                # 1. Resolve
+                google_link = entry.get('link')
+                logger.info(f"[GNews] Processing: {entry.get('title', '...')[:50]}")
+                url = await asyncio.to_thread(self.resolve_url, google_link)
                 
-                # 2. Extract Data
+                # 2. Extract
                 article_data = await asyncio.to_thread(self.extract_full, url)
                 if not article_data: continue
 
-                # 3. Create ScrapedArticle mapped strictly to requested schema
+                # 3. Create
                 scraped = ScrapedArticle(
                     title=article_data['title'],
                     content=article_data['content'],
-                    url=url, # Home
+                    url=url,
                     published_at=datetime.now(timezone.utc),
                     image_url=article_data['image_url'],
-                    # Fulfilling mandatory custom fields inside metadata or mapping depending on your BaseScraper
                     metadata={
                         "Category": category,
                         "Source": self.extract_source(url),
-                        "Peoples Feedback": "N/A",
-                        "Tags": article_data['tags'],
-                        "source_id": self.source_name
+                        "Tags": article_data['tags']
                     }
                 )
                 if scraped.is_valid():
                     articles.append(scraped)
-                    logger.info(f"[GNews]   ✓ {scraped.title[:50]}...")
+                    logger.info(f"[GNews]   ✓ Saved")
             except Exception as e:
-                logger.debug(f"[GNews] Error: {e}")
+                logger.debug(f"[GNews] Entry Error: {e}")
                 continue
         
         return articles
@@ -137,16 +143,13 @@ class GoogleNewsScraper(BaseScraper):
             article = Article(url, config=self.article_config)
             article.download()
             article.parse()
-            
             text = article.text
-            if not text or len(text) < 150:
-                return None
+            if not text or len(text) < 150: return None
             
-            try: 
+            try:
                 article.nlp()
-                # Join tags list into comma-separated string to match your prompt specs
                 tags = ", ".join(article.keywords[:5])
-            except: 
+            except:
                 tags = ""
 
             return {
@@ -155,9 +158,9 @@ class GoogleNewsScraper(BaseScraper):
                 "image_url": article.top_image,
                 "tags": tags
             }
-        except: 
+        except:
             return None
 
-# Self-registration
+# Registration
 from app.scrapers.base_scraper import ScraperFactory
 ScraperFactory.register("googlenews", GoogleNewsScraper)
