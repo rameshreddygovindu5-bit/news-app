@@ -14,6 +14,7 @@ import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { ShareBar } from "@/components/news/ShareMenu";
 import { BackToTop } from "@/components/news/BackToTop";
 import { newsApi } from "@/lib/api";
+import { GoogleAdUnit } from "@/components/shared/GoogleAdUnit";
 import type { NewsArticle } from "@/types/news";
 import { getImage, categoryPlaceholder, hasTelugu } from "@/types/news";
 
@@ -139,6 +140,11 @@ export default function TeluguDetail() {
         </div>
       </div>
 
+      {/* Telugu Detail Header Ad unit */}
+      <div className="max-w-4xl mx-auto px-4 mt-8">
+        <GoogleAdUnit slot="2468013579" />
+      </div>
+
       {/* Content */}
       <div className="max-w-4xl mx-auto px-4 py-10">
         {/* Breadcrumb */}
@@ -182,6 +188,9 @@ export default function TeluguDetail() {
 
         {/* Article body */}
         <div className={contentClass} dangerouslySetInnerHTML={{ __html: content }} />
+
+        {/* Telugu Detail Post-content Ad unit */}
+        <GoogleAdUnit slot="9753124680" format="fluid" className="my-8" />
 
         {/* Tricolor divider */}
         <div className="tricolor-stripe-bottom rounded-full mt-10 mb-8" />

@@ -16,6 +16,7 @@ import { ShareBar } from "@/components/news/ShareMenu";
 import { PollWidget } from "@/components/news/PollWidget";
 import { newsApi } from "@/lib/api";
 import { motion } from "framer-motion";
+import { GoogleAdUnit } from "@/components/shared/GoogleAdUnit";
 
 const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const el = e.currentTarget;
@@ -398,6 +399,9 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
           </div>
         </div>
       </div>
+      
+      {/* ── Top Ad Placement (High Visibility) ── */}
+      <GoogleAdUnit slot="1234567890" className="mb-8" />
 
       {/* ── Hero ── */}
       <section className="mb-10">
@@ -494,6 +498,9 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                 Subscribe
               </button>
             </div>
+
+            {/* Sidebar Ad Unit */}
+            <GoogleAdUnit slot="0987654321" format="rectangle" className="rounded-xl border border-gray-100 bg-white p-2" />
 
             {/* Wishes & Greetings */}
             <WishesSidebar />
