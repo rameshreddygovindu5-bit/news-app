@@ -258,7 +258,8 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
     const groups: Record<string, NewsArticle[]> = {};
     // FIX: Show ALL categories, not just first 5
     safe.slice(5).forEach(a => {
-      const c = a.category || "General";
+      let c = a.category || "General News";
+      if (c === "Home") c = "Latest Updates";
       (groups[c] ??= []).push(a);
     });
     return { featured: safe[0], secondary: safe.slice(1, 5), catGroups: groups, allSorted: safe };
@@ -441,11 +442,11 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                     className="text-2xl font-black uppercase tracking-tight text-[var(--pf-navy)]"
                     style={{ fontFamily: "var(--font-headline)" }}
                   >
-                    {cat}
+                    {cat === "Home" ? "Fresh News" : cat}
                   </h2>
                 </div>
                 <Link
-                  href={`/news?category=${cat}`}
+                  href={cat === "Home" || cat === "Latest Updates" ? "/news" : `/news?category=${cat}`}
                   className="flex items-center gap-1.5 bg-[var(--pf-navy)] text-white px-5 py-2 rounded-lg font-bold text-[11px] uppercase tracking-wider hover:bg-[var(--pf-saffron)] transition-colors"
                 >
                   See All <ArrowRight className="w-3.5 h-3.5" />

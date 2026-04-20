@@ -103,17 +103,18 @@ async def _seed_defaults():
             )
         ).scalar_one_or_none()
         if not existing_admin:
+            admin_pwd = settings.ADMIN_DEFAULT_PASSWORD
             db.add(AdminUser(
                 username="admin",
-                password_hash=hash_password("admin123"),
+                password_hash=hash_password(admin_pwd),
                 role="admin",
                 email="admin@newsplatform.local",
                 is_active=True,
             ))
             await db.commit()
+            display_pwd = "***" if admin_pwd != "admin123" else "admin123 (DEFAULT — CHANGE IN .env)"
             logger.info(
-                "[DB] Default admin user created — username: admin, password: admin123"
-                " — CHANGE THIS IN PRODUCTION!"
+                f"[DB] Default admin user created — username: admin, password: {display_pwd}"
             )
 
         # ── Default "Peoples Feedback" source ─────────────────────────

@@ -61,7 +61,6 @@ async def lifespan(app: FastAPI):
     # 2. Start in-process scheduler (ONLY on local dev)
     # On AWS/Production, the local environment pushes data, so the server
     # should remain passive to save resources.
-    stop_scheduler = lambda: None  # noqa
     if settings.IS_LOCAL_DEV:
         try:
             from app.tasks.scheduler import start_scheduler
@@ -76,7 +75,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     try:
-        stop_scheduler()
+        if settings.IS_LOCAL_DEV:
+            from app.tasks.scheduler import stop_scheduler as _real_stop
+            _real_stop()
     except Exception:
         pass
     logger.info("Shutdown complete.")
@@ -99,13 +100,15 @@ _cors_origins = list(
     set(settings.CORS_ORIGINS + [
         "http://localhost:3000", "http://127.0.0.1:3000",
         "http://localhost:3001", "http://127.0.0.1:3001",
+        "http://localhost:3003", "http://127.0.0.1:3003",
         "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
     ])
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

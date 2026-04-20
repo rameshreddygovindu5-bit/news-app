@@ -363,53 +363,18 @@ class GreatAndhraScraper(BaseScraper):
                         result["image_url"] = self._normalize(src)
                         break
 
-        # Content — all <p> between h1 and end markers
-        content_parts = []
-        in_body = False
-        end_markers = [
-            "RELATED ARTICLES", "Related Articles",
-            "Top News", "Top Trending", "Recommended For You",
-            "Gossip:", "About Us", "Disclaimer", "\u00a9",
-            "Click Here For Photo Gallery",
-        ]
-
-        for el in soup.find_all(["h1", "p"]):
-            if el.name == "h1":
-                in_body = True
-                continue
-            if not in_body:
-                continue
-
-            text = el.get_text(strip=True)
-            if any(marker in text for marker in end_markers):
-                break
-            # Noise filter for common fluff
-            if "Click Here For Photo Gallery" in text:
-                continue
-
-            if not text or len(text) < 15:
-                continue
-            if text.startswith("Tags:"):
-                break
-            if "Published Date" in text or "UPDATED" in text:
-                continue
-            if text == result["title"]:
-                continue
-            if el.find_parent(["nav", "header", "footer", "aside"]):
-                continue
-            parent_class = " ".join(el.parent.get("class", []) if el.parent else [])
-            if re.search(r"ad|banner|promo|sidebar|widget|recommend", parent_class, re.I):
-                continue
-            if text not in content_parts:
-                content_parts.append(text)
-
-        result["content"] = "\n\n".join(content_parts)
+        # Content extraction with robust fallbacks
+        from app.scrapers.scraper_utils import ArticleExtractor
+        ae = ArticleExtractor(
+            base_url=self.current_base,
+            content_selectors=[".post-content", ".article-content", ".entry-content", "#storyBody", ".Normal"]
+        )
+        result["content"] = ae.extract_content(soup, result["title"])
 
         # newspaper3k fallback if content is too short
-        if not result["content"] or len(result["content"]) < 80:
+        if not result["content"] or len(result["content"]) < 200:
             try:
                 from app.scrapers.content_extractor import extract_article
-                import asyncio
                 np_result = await extract_article(url, html)
                 if np_result.get("success") and len(np_result.get("content", "")) > len(result["content"] or ""):
                     result["content"] = np_result["content"]

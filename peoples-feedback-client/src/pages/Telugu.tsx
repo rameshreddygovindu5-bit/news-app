@@ -11,6 +11,7 @@ import { Clock, Search, ArrowRight, Newspaper, ChevronLeft, ChevronRight } from 
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { BackToTop } from "@/components/news/BackToTop";
+import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import type { ArticleListResponse, NewsArticle } from "@/types/news";
 import { getImage, categoryPlaceholder } from "@/types/news";
@@ -119,31 +120,10 @@ export default function TeluguPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch     = useDebounce(search, 500);
 
-  // SEO Meta Injection for Telugu Page
+  // Scroll to top when article changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
-    document.title = "తెలుగు వార్తలు — Peoples Feedback";
-    const meta = {
-      'description': "తాజా తెలుగు వార్తలు: నేటి ముఖ్యాంశాలు, ఆంధ్రప్రదేశ్ మరియు తెలంగాణ వార్తలు ఒక్క చోటే. పీపుల్స్ ఫీడ్‌బ్యాక్ తెలుగు వార్తా పోర్టల్.",
-      'og:title': "తెలుగు వార్తలు — పీపుల్స్ ఫీడ్‌బ్యాక్",
-      'og:description': "తాజా తెలుగు వార్తలు మరియు విశ్లేషణలు.",
-      'og:image': "https://images.unsplash.com/photo-1588681664899-f142ff2dc9b1?w=1200&q=80",
-      'twitter:card': 'summary_large_image'
-    };
-    const tags = [];
-    Object.entries(meta).forEach(([name, content]) => {
-      const tag = document.createElement('meta');
-      if (name.startsWith('og:') || name.startsWith('twitter:')) tag.setAttribute('property', name);
-      else tag.setAttribute('name', name);
-      tag.setAttribute('content', content);
-      document.head.appendChild(tag);
-      tags.push(tag);
-    });
-    return () => { 
-      document.title = "Peoples Feedback";
-      tags.forEach(t => document.head.removeChild(t)); 
-    };
-  }, []);
+  }, [page, debouncedSearch]);
 
   const { data, isLoading } = useQuery<ArticleListResponse>({
     queryKey: ["telugu-articles", page, debouncedSearch],
@@ -159,6 +139,11 @@ export default function TeluguPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <SEO 
+        title="తెలుగు వార్తలు - తాజా వార్తలు"
+        description="తాజా తెలుగు వార్తలు: నేటి ముఖ్యాంశాలు, ఆంధ్రప్రదేశ్ మరియు తెలంగాణ వార్తలు ఒక్క చోటే. పీపుల్స్ ఫీడ్‌బ్యాక్ తెలుగు వార్తా పోర్టల్."
+        url="/telugu"
+      />
       <PremiumHeader selectedCategory="Telugu" onCategoryChange={() => {}} searchQuery="" onSearchChange={() => {}} />
 
       {/* Hero banner */}

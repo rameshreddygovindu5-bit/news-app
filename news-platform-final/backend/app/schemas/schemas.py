@@ -13,6 +13,19 @@ class FlagEnum(str, Enum):
     TOP_NEWS = "Y"     # Top 100 ranked
     DELETED = "D"      # Soft deleted
 
+class AiStatusEnum(str, Enum):
+    """Tracks AI processing state. Stored in news_articles.ai_status."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    AI_SUCCESS = "AI_SUCCESS"
+    AI_RETRY_SUCCESS = "AI_RETRY_SUCCESS"
+    GOOGLE_NEWS_NO_AI = "GOOGLE_NEWS_NO_AI"   # Google News — AI intentionally skipped
+    UNPROCESSED_AI_FALLBACK = "UNPROCESSED_AI_FALLBACK"
+    REWRITE_FAILED = "REWRITE_FAILED"          # Sent to admin review (flag=P)
+    FAILED = "failed"
+    COMPLETED = "completed"                    # Legacy — pre-v2 status code
+
+
 class ScraperTypeEnum(str, Enum):
     RSS = "rss"
     HTML = "html"
@@ -111,6 +124,7 @@ class NewsArticleResponse(BaseModel):
     content_hash: Optional[str] = None
     is_duplicate: bool
     flag: str
+    ai_status: Optional[str] = None  # AI_SUCCESS | AI_RETRY_SUCCESS | GOOGLE_NEWS_NO_AI | REWRITE_FAILED | pending | failed
     rank_score: float = 0
     image_url: Optional[str] = None
     author: Optional[str] = None

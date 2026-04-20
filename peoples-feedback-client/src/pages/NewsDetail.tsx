@@ -18,6 +18,7 @@ import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { ShareMenu, ShareBar } from "@/components/news/ShareMenu";
 import { BackToTop } from "@/components/news/BackToTop";
+import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import type { NewsArticle, ArticleListResponse } from "@/types/news";
 import { getTitle, getContent, getImage, getSummary, categoryPlaceholder, hasTelugu, readTime } from "@/types/news";
@@ -77,50 +78,6 @@ export default function NewsDetail() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // FIX: Update document title and SEO meta tags dynamically
-  useEffect(() => {
-    if (article) {
-      const t = getTitle(article);
-      const desc = getSummary(article, 160);
-      const img = getImage(article);
-      const url = window.location.href;
-
-      document.title = t ? `${t} — Peoples Feedback` : "Peoples Feedback";
-
-      // SEO Meta Injection
-      const meta = {
-        'description': desc,
-        'og:title': t,
-        'og:description': desc,
-        'og:image': img,
-        'og:url': url,
-        'og:type': 'article',
-        'twitter:card': 'summary_large_image',
-        'twitter:title': t,
-        'twitter:description': desc,
-        'twitter:image': img
-      };
-
-      const tags = [];
-      Object.entries(meta).forEach(([name, content]) => {
-        const tag = document.createElement('meta');
-        if (name.startsWith('og:') || name.startsWith('twitter:')) {
-          tag.setAttribute('property', name);
-        } else {
-          tag.setAttribute('name', name);
-        }
-        tag.setAttribute('content', content || '');
-        document.head.appendChild(tag);
-        tags.push(tag);
-      });
-
-      return () => {
-        document.title = "Peoples Feedback";
-        tags.forEach(tag => document.head.removeChild(tag));
-      };
-    }
-  }, [article]);
-
   // FIX: Related articles with flags=A,Y filter (published only)
   const { data: related } = useQuery<ArticleListResponse>({
     queryKey: ["related", article?.category],
@@ -173,6 +130,19 @@ export default function NewsDetail() {
 
   return (
     <div className="min-h-screen bg-tricolor-light text-zinc-900">
+      <SEO 
+        title={title}
+        description={getSummary(article, 160)}
+        image={getImage(article)}
+        url={`/news/${article.slug || article.id}`}
+        type="article"
+        articleData={{
+          publishedTime: article.published_at,
+          author: article.author,
+          section: article.category,
+          tags: article.tags
+        }}
+      />
       {/* Reading progress bar */}
       <motion.div className="reading-progress" style={{ scaleX }} />
 

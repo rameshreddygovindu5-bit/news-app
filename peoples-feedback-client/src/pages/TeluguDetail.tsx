@@ -13,6 +13,7 @@ import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { ShareBar } from "@/components/news/ShareMenu";
 import { BackToTop } from "@/components/news/BackToTop";
+import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import type { NewsArticle } from "@/types/news";
 import { getImage, categoryPlaceholder, hasTelugu } from "@/types/news";
@@ -65,15 +66,6 @@ export default function TeluguDetail() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [idOrSlug]);
 
-  // Update page title from article content
-  useEffect(() => {
-    if (article) {
-      const t = article.telugu_title || article.rephrased_title || article.original_title;
-      document.title = t ? `${t} — Peoples Feedback` : "తెలుగు వార్తలు — Peoples Feedback";
-    }
-    return () => { document.title = "Peoples Feedback"; };
-  }, [article]);
-
   if (isLoading) return (
     <>
       <motion.div className="reading-progress" style={{ scaleX }} />
@@ -109,6 +101,19 @@ export default function TeluguDetail() {
 
   return (
     <div className="min-h-screen bg-white">
+      <SEO 
+        title={article.telugu_title || article.rephrased_title}
+        description={content.replace(/<[^>]*>/g, "").slice(0, 160)}
+        image={getImage(article)}
+        url={`/telugu/${article.slug || article.id}`}
+        type="article"
+        articleData={{
+          publishedTime: article.published_at,
+          author: article.author,
+          section: article.category,
+          tags: article.tags
+        }}
+      />
       <motion.div className="reading-progress" style={{ scaleX }} />
       <PremiumHeader selectedCategory="Telugu" onCategoryChange={() => {}} searchQuery="" onSearchChange={() => {}} />
 

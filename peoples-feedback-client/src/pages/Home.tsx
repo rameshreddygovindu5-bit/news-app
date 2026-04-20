@@ -9,36 +9,15 @@ import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { NewsLayout } from "@/components/news/NewsLayout";
 import { BackToTop } from "@/components/news/BackToTop";
+import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import { useDebounce } from "@/hooks/useDebounce";
 import type { ArticleListResponse, NewsArticle } from "@/types/news";
 
 export default function Home() {
   const [search, setSearch] = useState("");
-  const [cat, setCat]       = useState("All");
+  const [cat, setCat]       = useState("Home");  // "Home" = show all (no category filter)
   const debouncedSearch     = useDebounce(search, 500);
-  
-  // SEO Meta Injection
-  useEffect(() => {
-    document.title = "Peoples Feedback — Latest News & Telugu Updates";
-    const meta = {
-      'description': "Peoples Feedback: The premium news destination for unbiased reporting, breaking news, and cultural updates from Andhra Pradesh, Telangana, and the world.",
-      'og:title': "Peoples Feedback — Indian News Platform",
-      'og:description': "Top news stories, regional updates, and community wishes on Peoples Feedback.",
-      'og:image': "https://images.unsplash.com/photo-1504711434969-e33886168d6c?w=1200&q=80",
-      'twitter:card': 'summary_large_image'
-    };
-    const tags = [];
-    Object.entries(meta).forEach(([name, content]) => {
-      const tag = document.createElement('meta');
-      if (name.startsWith('og:') || name.startsWith('twitter:')) tag.setAttribute('property', name);
-      else tag.setAttribute('name', name);
-      tag.setAttribute('content', content);
-      document.head.appendChild(tag);
-      tags.push(tag);
-    });
-    return () => { tags.forEach(t => document.head.removeChild(t)); };
-  }, []);
 
   // ── Infinite query — accumulates articles correctly ──────────────────
   const {
@@ -54,9 +33,11 @@ export default function Home() {
       newsApi.getArticles({
         page:      pageParam as number,
         page_size: 25,
-        flag:      "Y", // Top news only
-        category:  cat === "All" ? undefined : cat,
+        // "Home" and "All" both mean no category filter — show all latest news
+        category:  (cat === "All" || cat === "Home") ? undefined : cat,
         keyword:   debouncedSearch || undefined,
+        // Use flags A,Y so articles appear even before ranking job has run
+        flags:     "A,Y",
       }),
     getNextPageParam: (last, allPages) => {
       const totalLoaded = allPages.length * 25;
@@ -73,9 +54,14 @@ export default function Home() {
   const handleCategoryChange = useCallback((c: string) => {
     setCat(c);
   }, []);
-
+  
   return (
     <div className="min-h-screen bg-tricolor-light text-zinc-900">
+      <SEO 
+        title={(cat === "All" || cat === "Home") ? "Latest News" : `${cat} News`}
+        description="Stay updated with the latest news, in-depth reports, and community perspectives on Peoples Feedback. Your voice, your news."
+        url={(cat === "All" || cat === "Home") ? "/" : `/news?category=${cat}`}
+      />
       {/* Subtle Indian flag background blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden>
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-[var(--pf-saffron)]/10 rounded-full blur-3xl" />

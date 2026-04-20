@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, Float, DateTime, ForeignKey,
-    CheckConstraint, JSON
+    CheckConstraint, JSON, Index
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -84,7 +84,7 @@ class NewsArticle(Base):
     submitted_by = Column(String(100))  # username of reporter who submitted
 
     # Ranking
-    rank_score = Column(Float, default=0)
+    rank_score = Column(Float, default=0, index=True)
 
     # Metadata
     image_url = Column(String(1000))
@@ -99,6 +99,10 @@ class NewsArticle(Base):
 
     __table_args__ = (
         CheckConstraint("flag IN ('P', 'N', 'A', 'Y', 'D')", name="valid_flag"),
+        # Composite indexes for frequent query patterns
+        Index("ix_articles_ranking", "flag", "ai_status", "is_duplicate", "rank_score"),
+        Index("ix_articles_created_flag", "created_at", "flag"),
+        Index("ix_articles_category_flag", "category", "flag"),
     )
 
     source = relationship("NewsSource", back_populates="articles")

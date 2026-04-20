@@ -29,9 +29,23 @@ async function post<T>(path: string, body?: any): Promise<T> {
 }
 
 export const newsApi = {
-  /** List published articles. Supports category, keyword, flag, pagination. */
-  getArticles: (p: { page?: number; page_size?: number; category?: string; keyword?: string; lang?: string; flag?: string }) =>
-    get<import('@/types/news').ArticleListResponse>('/api/articles', { ...p, flags: p.flag ? undefined : 'A,Y' }),
+  /** List published articles. Supports category, keyword, flags/flag, pagination.
+   *  - flags (multi): "A,Y" | "Y" — preferred, matches backend `flags` param
+   *  - flag  (single): "Y" | "N" etc — for admin use
+   *  - Default: flags="A,Y" (all published articles)
+   */
+  getArticles: (p: {
+    page?: number; page_size?: number; category?: string; keyword?: string;
+    lang?: string; flag?: string; flags?: string; telugu_page?: string;
+  }) => {
+    const { flag, flags: explicitFlags, ...rest } = p;
+    // Explicit `flags` wins → else single `flag` → else default A,Y
+    const resolvedFlags = explicitFlags || (flag ? flag : 'A,Y');
+    return get<import('@/types/news').ArticleListResponse>('/api/articles', {
+      ...rest,
+      flags: resolvedFlags,
+    });
+  },
 
   /** Top 500 ranked news (flag=Y) */
   getTopNews: (limit = 500) =>

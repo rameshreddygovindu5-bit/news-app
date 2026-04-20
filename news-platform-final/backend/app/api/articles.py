@@ -62,7 +62,7 @@ async def _run_ai_and_rank(article_id: int):
             art.category = result["category"]
             art.slug = result.get("slug") or _make_slug(result["rephrased_title"])
             art.tags = result.get("tags", [])
-            art.ai_status = "completed"
+            art.ai_status = "AI_SUCCESS"
             art.processed_at = datetime.now(timezone.utc)
             # Auto-rank: set flag=Y so it appears in top news and client UI
             art.flag = "Y"
@@ -196,7 +196,11 @@ async def get_articles_by_category(
     telugu_page: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    base = [NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
+    # "Home" is a special sentinel: return all categories (latest news across everything)
+    if category.lower() == "home":
+        base = [NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
+    else:
+        base = [NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
     
     if telugu_page:
         base.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
@@ -379,7 +383,7 @@ async def submit_article(
         image_url=data.image_url, original_language="en",
         published_at=datetime.now(timezone.utc), processed_at=datetime.now(timezone.utc) if target_flag != "P" else None,
         submitted_by=user.username,
-        ai_status="completed" if is_admin else "pending",
+        ai_status="AI_SUCCESS" if is_admin else "pending",
         scrape_metadata={"ai_method": "manual"} if is_admin else None
     )
     db.add(article)
@@ -578,7 +582,7 @@ async def create_manual_article(
         image_url=data.image_url, original_language="en",
         published_at=datetime.now(timezone.utc), processed_at=datetime.now(timezone.utc),
         submitted_by="admin",
-        ai_status="completed",
+        ai_status="AI_SUCCESS",
         scrape_metadata={"ai_method": "manual"}
     )
     db.add(article)

@@ -144,7 +144,21 @@ class GoogleNewsScraper(BaseScraper):
             article.download()
             article.parse()
             text = article.text
-            if not text or len(text) < 150: return None
+            
+            # If newspaper3k returns too little, try our specialized ArticleExtractor
+            if not text or len(text) < 300:
+                from app.scrapers.scraper_utils import ArticleExtractor
+                import requests
+                from bs4 import BeautifulSoup
+                resp = requests.get(url, headers=self.headers, timeout=10)
+                if resp.ok:
+                    soup = BeautifulSoup(resp.text, "lxml")
+                    ae = ArticleExtractor(base_url=url)
+                    alt_text = ae.extract_content(soup, article.title)
+                    if len(alt_text) > len(text or ""):
+                        text = alt_text
+
+            if not text or len(text) < 100: return None
             
             try:
                 article.nlp()
@@ -158,9 +172,11 @@ class GoogleNewsScraper(BaseScraper):
                 "image_url": article.top_image,
                 "tags": tags
             }
-        except:
+        except Exception as e:
+            logger.debug(f"[GNews] Extraction failed for {url}: {e}")
             return None
 
-# Registration
+# Registration — register under both keys so ScraperFactory always finds it
 from app.scrapers.base_scraper import ScraperFactory
 ScraperFactory.register("googlenews", GoogleNewsScraper)
+ScraperFactory.register("google news", GoogleNewsScraper)  # matches source.name for AI bypass check

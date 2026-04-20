@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.database import SyncSessionLocal
 from app.models.models import (
     NewsSource, NewsArticle, Category, JobExecutionLog,
-    PostErrorLog, SyncMetadata, SourceErrorLog, Wish,
+    PostErrorLog, SyncMetadata, SourceErrorLog, Wish, PollOption,
 )
 from app.scrapers.base_scraper import ScraperFactory
 from app.services.ai_service import ai_service
@@ -181,9 +181,6 @@ def scrape_all_sources(ignore_window: bool = False):
     finally:
         db.close()
     
-    # Trigger full pipeline after scrape to ensure fresh content flows to AWS
-    _trigger_full_pipeline()
-
     _banner("SCRAPE ALL SOURCES", False)
 
 @celery_app.task(name="app.tasks.celery_app.scrape_source")
@@ -299,9 +296,6 @@ def process_ai_batch():
     finally:
         db.close()
     
-    # Trigger rank & sync after AI batch complete
-    _trigger_full_pipeline()
-
     _banner("AI ENRICHMENT", False)
 
 def worker_process_ai(article_id: int) -> bool:
@@ -309,7 +303,11 @@ def worker_process_ai(article_id: int) -> bool:
     try:
         art = db.query(NewsArticle).get(article_id)
         if not art: return False
-        res = ai_service.process_article(art.original_title, art.original_content or "")
+        
+        # New: Pass source name for specific fallback rules
+        source_name = art.source.name if art.source else "Unknown"
+        res = ai_service.process_article(art.original_title, art.original_content or "", source_name=source_name)
+        
         art.rephrased_title = res["rephrased_title"]
         art.rephrased_content = res["rephrased_content"]
         art.telugu_title = res.get("telugu_title", "")
@@ -324,10 +322,31 @@ def worker_process_ai(article_id: int) -> bool:
 
         art.slug = res.get("slug") or art.slug
         art.tags = res.get("tags", [])
-        art.ai_status = "completed"
-        art.flag = "A"
+        
+        # Use specific status code
+        # Valid: AI_SUCCESS, AI_RETRY_SUCCESS, UNPROCESSED_AI_FALLBACK, GOOGLE_NEWS_NO_AI, REWRITE_FAILED
+        status_code = res.get("ai_status_code", "completed")
+        art.ai_status = status_code
+        
+        # Rule enforcement
+        if status_code == "REWRITE_FAILED":
+            art.flag = "A"  # Fallback to original cleaned if AI fails, still show on site
+            logger.warning(f"[AI] {source_name} rephrasing failed similarity check for article {article_id} - sent to admin review")
+        elif status_code == "GOOGLE_NEWS_NO_AI":
+            art.flag = "A"  # AI intentionally skipped — still eligible for ranking
+            logger.info(f"[AI] Google News article {article_id} — AI disabled (GOOGLE_NEWS_NO_AI), formatted and staged")
+        else:
+            art.flag = "A"  # A=AI Processed, ready for Ranking/Sync
+            
         art.processed_at = datetime.now(timezone.utc)
-        meta = dict(art.scrape_metadata or {}); meta["ai_method"] = res.get("method","unknown"); art.scrape_metadata = meta
+        
+        # Metadata
+        meta = dict(art.scrape_metadata or {})
+        meta["ai_method"] = res.get("method","unknown")
+        meta["ai_status_detail"] = status_code
+        meta["similarity_score"] = res.get("similarity_score", 1.0)
+        art.scrape_metadata = meta
+        
         db.commit(); return True
     except Exception as e:
         logger.error(f"[AI] Article {article_id}: {e}")
@@ -358,7 +377,10 @@ def update_top_100_ranking():
         for days in [3, 7, 14, 30, 60]:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             candidates = db.query(NewsArticle).join(NewsSource).filter(
-                NewsArticle.ai_status=="completed",
+                NewsArticle.ai_status.in_([
+                    "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI", "REWRITE_FAILED"
+                ]),
                 NewsArticle.created_at>=cutoff,
                 NewsArticle.is_duplicate==False,
                 NewsArticle.flag.in_(["A","Y"]),
@@ -368,7 +390,10 @@ def update_top_100_ranking():
         if not candidates:
             # Ultimate fallback: get ALL completed non-duplicate articles ordered by recency
             candidates = db.query(NewsArticle).join(NewsSource).filter(
-                NewsArticle.ai_status=="completed",
+                NewsArticle.ai_status.in_([
+                    "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI", "REWRITE_FAILED"
+                ]),
                 NewsArticle.is_duplicate==False,
             ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()
             logger.info(f"[RANK] Fallback candidates: {len(candidates)}")
@@ -379,16 +404,16 @@ def update_top_100_ranking():
 
         logger.info(f"[RANK] Scoring {len(candidates)} candidates")
 
-        # Score
+        # Score - Prioritize recency for 'Latest News' feel
         now = datetime.now(timezone.utc)
         for a in candidates:
-            # Handle naive datetime from SQLite or other sources
-            cat = a.created_at
-            if cat.tzinfo is None:
-                cat = cat.replace(tzinfo=timezone.utc)
+            cat = a.published_at or a.created_at
+            if cat.tzinfo is None: cat = cat.replace(tzinfo=timezone.utc)
             
             age_h = (now - cat).total_seconds() / 3600
-            a.rank_score = (a.source.priority*15) + (a.source.credibility_score*25) + max(0, 100-(0.4*age_h))
+            # Higher recency weight: 1000 - (20 * age_h) ensures fresh news stays above old high-priority sources
+            recency_score = max(0, 1000 - (20 * age_h)) 
+            a.rank_score = (a.source.priority * 10) + (a.source.credibility_score * 20) + recency_score
         db.commit()
 
         # Get categories
@@ -407,14 +432,14 @@ def update_top_100_ranking():
             if len(cat_arts) < settings.TOP_NEWS_MIN_PER_CATEGORY:
                 extra = db.query(NewsArticle).filter(
                     NewsArticle.category==cname,
-                    NewsArticle.ai_status=="completed",
+                    NewsArticle.ai_status.in_(["completed", "AI_SUCCESS", "AI_RETRY_SUCCESS", "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"]),
                     NewsArticle.is_duplicate==False,
                     NewsArticle.created_at>=two_months_ago,
                 ).order_by(desc(NewsArticle.rank_score)).limit(settings.TOP_NEWS_MIN_PER_CATEGORY).all()
                 seen = {a.id for a in cat_arts}
                 for e in extra:
                     if e.id not in seen: cat_arts.append(e); seen.add(e.id)
-                cat_arts = sorted(cat_arts, key=lambda x: x.rank_score or 0, reverse=True)
+                cat_arts = sorted(cat_arts, key=lambda x: (x.rank_score or 0), reverse=True)
 
             take = max(settings.TOP_NEWS_MIN_PER_CATEGORY, min(settings.TOP_NEWS_MAX_PER_CATEGORY, len(cat_arts)))
             final_ids.extend(a.id for a in cat_arts[:take])
@@ -440,9 +465,6 @@ def update_top_100_ranking():
     finally:
         db.close()
     
-    # Trigger sync after Ranking complete
-    _trigger_full_pipeline()
-
     _banner("TOP-100 RANKING", False)
 
 # ── TASK 4: AWS SYNC ──────────────────────────────────────────────────
@@ -586,6 +608,25 @@ def sync_to_aws():
             # Prune
             if local_poll_ids: cur.execute("UPDATE polls SET is_active=FALSE WHERE id NOT IN %s", (tuple(local_poll_ids),))
             if local_opt_ids: cur.execute("DELETE FROM poll_options WHERE id NOT IN %s", (tuple(local_opt_ids),))
+
+            # ── Bidirectional: pull AWS vote counts back to local DB ──────────
+            # AWS is the authoritative source for votes (public users vote on AWS)
+            try:
+                if local_opt_ids:
+                    cur.execute(
+                        "SELECT id, votes_count FROM poll_options WHERE id = ANY(%s)",
+                        (list(local_opt_ids),)
+                    )
+                    aws_votes = cur.fetchall()
+                    for aws_id, aws_count in aws_votes:
+                        db.execute(
+                            update(PollOption).where(PollOption.id == aws_id).values(votes_count=aws_count)
+                        )
+                    if aws_votes:
+                        db.commit()
+                        logger.info(f"[AWS] Pulled vote counts for {len(aws_votes)} poll options from AWS → local")
+            except Exception as ev:
+                logger.warning(f"[AWS] Vote pull-back failed (non-critical): {ev}")
         except Exception as e:
             logger.error(f"[AWS] Polls Sync Error: {e}")
 
@@ -710,7 +751,6 @@ def sync_to_aws():
     finally:
         db.close()
     _banner("AWS SYNC", False)
-    _banner("AWS SYNC", False)
 
 
 @celery_app.task(name="app.tasks.celery_app.full_integrity_sync")
@@ -824,7 +864,7 @@ def cleanup_old_articles():
     log = log_job(db, "maintenance")
     if not log: return
     try:
-        res = db.execute(update(NewsArticle).where(NewsArticle.flag!="D", NewsArticle.created_at<datetime.now(timezone.utc)-timedelta(days=15)).values(flag="D", deleted_at=func.now(), updated_at=func.now()))
+        res = db.execute(update(NewsArticle).where(NewsArticle.flag!="D", NewsArticle.created_at<datetime.now(timezone.utc)-timedelta(days=30)).values(flag="D", deleted_at=func.now(), updated_at=func.now()))
         db.commit(); complete_job(db, log, res.rowcount, 0)
     except Exception as e: logger.error(f"[CLEANUP] {e}"); complete_job(db, log, 0, 0, str(e))
     finally: db.close()
@@ -910,6 +950,9 @@ def run_master_heartbeat():
     db.close()
     logger.info(f"[PULSE] Pulse complete in {time.time()-t0:.1f}s")
     _banner("MASTER HEARTBEAT", False)
+
+# Alias for backward compatibility (referenced in scheduler API + __main__)
+run_full_pipeline = run_master_heartbeat
 
 if __name__ == "__main__":
     import sys

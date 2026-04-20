@@ -35,10 +35,34 @@ class Settings(BaseSettings):
                 self.DATABASE_URL = "sqlite+aiosqlite:///./newsagg.db"
                 self.DATABASE_URL_SYNC = "sqlite:///./newsagg.db"
 
+        # ── Production safety warnings ────────────────────────────────────
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        if self.SECRET_KEY == "change-me-in-production":
+            _logger.warning(
+                "[SECURITY] SECRET_KEY is using the default insecure value. "
+                "Set SECRET_KEY in .env before deploying to production!"
+            )
+        if self.ADMIN_DEFAULT_PASSWORD == "admin123":
+            _logger.warning(
+                "[SECURITY] ADMIN_DEFAULT_PASSWORD is 'admin123' (default). "
+                "Set ADMIN_DEFAULT_PASSWORD in .env and change after first login."
+            )
+        if not self.GEMINI_API_KEY:
+            _logger.warning("[CONFIG] GEMINI_API_KEY not set — AI rephrasing will use local/original fallback only.")
+
     APP_NAME: str = "News Aggregation Platform"
-    APP_VERSION: str = "2.1.0"
+    APP_VERSION: str = "2.2.0"  # Audit fixes: 2026-04-20
     DEBUG: bool = False
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str = "change-me-in-production"  # MUST override in .env for production
+
+    # ── Admin default password (override in .env for production) ──────
+    # Set ADMIN_DEFAULT_PASSWORD in .env to pre-configure the admin password on fresh install.
+    # After first login, change via the Admin → Users panel.
+    ADMIN_DEFAULT_PASSWORD: str = "admin123"
+
+    def __post_init_validators__(self):
+        pass  # validators run via __init__
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # ── CANONICAL CATEGORIES (master list — keep in sync everywhere) ──
@@ -61,12 +85,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # ── AI (chain: gemini_primary → gemini_secondary → openai → local → original) ─
-    AI_PROVIDER_CHAIN: List[str] = ["gemini", "gemini2", "gemini3", "openai", "local", "original"]
+    AI_PROVIDER_CHAIN: List[str] = ["gemini", "gemini2", "gemini3", "grok", "openai", "local", "original"]
     AI_BATCH_SIZE: int = 200
     AI_CONCURRENCY: int = 8
     AI_MAX_RETRIES: int = 2
-    GEMINI_API_KEY: str = "AIzaSyDweaZssdwJRDh7RSC1scmFvRMBtPwOtAY"
-    GEMINI_API_KEY_SECONDARY: str = "AIzaSyDOqGA7f69IcEtp5HiNY7NfMoTpFEi7LGw"
+    GEMINI_API_KEY: str = ""  # Must be set in .env — never hardcode
+    GEMINI_API_KEY_SECONDARY: str = ""  # Must be set in .env
+    XAI_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GROQ_API_KEY: str = ""
@@ -74,7 +99,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama3"
 
     # Third Gemini key (used as a fallback when primary and secondary are exhausted)
-    GEMINI_API_KEY_TERTIARY: str = "AIzaSyArwJeb6Apc4Vq2_3-tCoEe3Q7ik6Kd_F8"
+    GEMINI_API_KEY_TERTIARY: str = ""  # Must be set in .env
 
     # ── Scraping ──────────────────────────────────────────────────────
     SCRAPE_TIMEOUT: int = 30

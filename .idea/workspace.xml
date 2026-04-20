@@ -5,16 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="34f05863-d015-4fb0-8af6-2b952501d77c" name="Changes" comment="committed v2 changes">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/database.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/app/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/celerybeat-schedule" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/celerybeat-schedule" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/celerybeat-schedule-shm" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/celerybeat-schedule-wal" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/news-platform-final/frontend/src/components/common/Icons.js" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/frontend/src/components/common/Icons.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/components/news/PremiumHeader.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Home.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/peoples-feedback-client/src/pages/Home.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/news-platform-final/backend/newsagg.db-wal" beforeDir="false" afterPath="$PROJECT_DIR$/news-platform-final/backend/newsagg.db-wal" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -228,7 +219,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776647909271</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="committed v2 changes">
+      <option name="closed" value="true" />
+      <created>1776690984331</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1776690984331</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

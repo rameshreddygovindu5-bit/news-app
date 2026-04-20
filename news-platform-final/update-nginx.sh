@@ -82,6 +82,16 @@ server {
         proxy_set_header Host \$host;
     }
 
+    # ── SEO ──
+    location = /sitemap.xml {
+        proxy_pass $API_BACKEND/sitemap.xml;
+        proxy_set_header Host \$host;
+    }
+    location = /robots.txt {
+        proxy_pass $API_BACKEND/robots.txt;
+        proxy_set_header Host \$host;
+    }
+
     # ── Static asset caching ──
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 30d;

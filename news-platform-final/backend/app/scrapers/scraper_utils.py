@@ -188,8 +188,26 @@ class ArticleExtractor:
                 else:
                     content = elem.get_text(separator=" ", strip=True)
                 
-                if len(content) > 100:
+                if len(content) > 200:
                     return filter_content(content, title, self.end_markers)
+        
+        # Smart Fallback: Find the container with the most text in <p> tags
+        containers = soup.find_all(["div", "section", "article"])
+        best_content = ""
+        for container in containers:
+            # Skip noise containers
+            if any(cls in str(container.get("class", [])).lower() for cls in ["footer", "header", "nav", "sidebar", "comment", "related"]):
+                continue
+            
+            p_tags = container.find_all("p", recursive=False)
+            if not p_tags: continue
+            
+            current_text = " ".join(p.get_text(strip=True) for p in p_tags if len(p.get_text(strip=True)) > 25)
+            if len(current_text) > len(best_content):
+                best_content = current_text
+        
+        if len(best_content) > 150:
+            return filter_content(best_content, title, self.end_markers)
         
         return ""
     

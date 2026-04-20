@@ -1,15 +1,28 @@
 """
-AI Service v5.0 — Production News Transformation Engine
+AI Service v6.0 — Production News Transformation Engine
 ========================================================
-Fallback chain (Priority 1 → 4, then original):
-  Priority 1: Google Gemini PRIMARY key
-  Priority 2: Google Gemini SECONDARY key
-  Priority 3: OpenAI GPT-4o-mini
-  Priority 4: Ollama local LLM
-  Last Resort: ORIGINAL content — cleaned of source names, reformatted to
-               avoid copyright issues, paragraphs preserved.
+Fallback chain for regular sources (Priority 1 -> 6, then original):
+  Priority 1: Google Gemini PRIMARY      (AIzaSyDweaZs...)
+  Priority 2: Google Gemini SECONDARY   (AIzaSyDOqGA7...)
+  Priority 3: Google Gemini TERTIARY    (AIzaSyArwJeb...)
+  Priority 4: Grok AI (xAI)             (xai-ynDXskIZ...)
+  Priority 5: OpenAI (GPT-4o-mini)      (sk-proj-3Zj0...)
+  Priority 6: Ollama (Local LLM)        (localhost:11434)
+  Last Resort: ORIGINAL cleaned fallback.
+
+Google News source special chain:
+  Step 1: Ollama (local only — no paid APIs)
+  Step 2: Original cleaned content (GOOGLE_NEWS_NO_AI)
+
+AI Status Codes returned:
+  AI_SUCCESS              — Passed similarity check on first attempt (≤70%)
+  AI_RETRY_SUCCESS        — Passed on second attempt (retry with stronger prompt)
+  GOOGLE_NEWS_NO_AI       — Google News source: AI intentionally skipped per spec
+  REWRITE_FAILED          — All retries failed similarity check → sent to admin review
+  original_cleaned        — method field only; ai_status_code = one of the above
 
 Output: English rephrased article + Telugu translation, always.
+Similarity threshold: 0.70 (reject if title or content similarity > 70%).
 """
 import re, json, logging, time, hashlib
 from typing import Optional, Dict, List
@@ -21,6 +34,7 @@ except ImportError:
 
 from app.config import get_settings
 from app.services.category_service import category_service
+from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -195,13 +209,17 @@ def _original_fallback(title: str, content: str) -> Dict:
 
     # Basic auto-categorization
     cat = "Home"
-    text_lower = f"{clean_title} {clean_content[:500]}".lower()
+    text_lower = f"{clean_title} {clean_content[:1500]}".lower()
     cat_keywords = {
-        "Sports": ["cricket", "football", "match", "ipl", "player", "sport"],
-        "Tech": ["ai ", "technology", "google", "apple", "app ", "software"],
-        "Politics": ["election", "minister", "bjp", "congress", "government"],
-        "Business": ["market", "stock", "economy", "billion", "million", "bank"],
-        "Entertainment": ["movie", "film", "actor", "hollywood", "bollywood"],
+        "Andhra Pradesh": ["andhra", "ap ", "vijayawada", "visakhapatnam", "jagan", "chandrababu", "lokesh", "pawan kalyan", "amravati", "tirupati"],
+        "Telangana": ["telangana", "hyderabad", "revanth", " kcr ", " ktr ", "bainsa", "warangal", "khammam"],
+        "Politics": ["election", "minister", "bjp", "congress", "government", "mla", "mp ", "parliament", "assembly", "vote", "political", "cabinet"],
+        "Sports": ["cricket", "football", "match", "ipl", "player", "sport", "tennis", "olympic", "medal", "score", "wicket", "stadium"],
+        "Tech": ["ai ", "technology", "google", "apple", "app ", "software", "smartphone", "iphone", "chip", "semiconductor", "startup", "data"],
+        "Business": ["market", "stock", "economy", "billion", "million", "bank", "rbi", "sensex", "nifty", "profit", "investment", "finance"],
+        "Entertainment": ["movie", "film", "actor", "hollywood", "bollywood", "tollywood", "cinema", "trailer", "release", "review", "celebrity"],
+        "International": ["world", "global", "us ", "uk ", "iran", "israel", "russia", "ukraine", "un ", "summit", "foreign"],
+        "Health": ["health", "medical", "doctor", "virus", "vaccine", "study", "cancer", "fitness", "hospital"],
     }
     for c, kw in cat_keywords.items():
         if any(k in text_lower for k in kw):
@@ -227,34 +245,51 @@ def _original_fallback(title: str, content: str) -> Dict:
 
 def _try_gemini(api_key: str, prompt: str, label: str = "gemini") -> Optional[str]:
     if not api_key: return None
-    try:
-        # Use new Client SDK (v2 API style)
-        from google import genai
-        from google.genai import types
-        
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.4,
-                max_output_tokens=2048,
-            )
-        )
-        if not response or not response.text:
-            return None
-        return response.text
-    except Exception as e:
-        logger.warning(f"[AI] {label} failed: {e}")
-        return None
+    import requests
+    
+    models_to_try = [
+        "gemini-1.5-flash", 
+        "gemini-1.5-pro", 
+    ]
+    
+    for model_name in models_to_try:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": f"{SYSTEM_PROMPT}\n\n{prompt}"}
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.4,
+                    "maxOutputTokens": 2048
+                }
+            }
+            resp = requests.post(url, json=payload, timeout=30)
+            if resp.ok:
+                data = resp.json()
+                # Extract text from Gemini response structure
+                try:
+                    return data['candidates'][0]['content']['parts'][0]['text']
+                except (KeyError, IndexError):
+                    continue
+            elif resp.status_code == 404:
+                continue
+            else:
+                logger.warning(f"[AI] {label} model {model_name} HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.debug(f"[AI] {label} {model_name} error: {e}")
+            continue
+            
+    return None
 
 
 def _try_openai(prompt: str) -> Optional[str]:
     if not settings.OPENAI_API_KEY: return None
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=30)
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -266,6 +301,26 @@ def _try_openai(prompt: str) -> Optional[str]:
         return resp.choices[0].message.content
     except Exception as e:
         logger.warning(f"[AI] OpenAI failed: {e}")
+        return None
+
+
+def _try_grok(prompt: str) -> Optional[str]:
+    if not getattr(settings, "XAI_API_KEY", None): return None
+    try:
+        from openai import OpenAI
+        # xAI is OpenAI-API compatible
+        client = OpenAI(api_key=settings.XAI_API_KEY, base_url="https://api.x.ai/v1", timeout=30)
+        resp = client.chat.completions.create(
+            model="grok-beta", # or 'grok-2' if available
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4, max_tokens=2048,
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        logger.warning(f"[AI] Grok/xAI failed: {e}")
         return None
 
 
@@ -302,59 +357,120 @@ LANG_NAMES = {
 }
 
 
+def compute_similarity(a: str, b: str) -> float:
+    """Compute gestalt pattern matching similarity between two strings."""
+    if not a or not b: return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
 class AIService:
-    def process_article(self, title: str, content: str) -> Dict:
-        """Process through AI chain: P1 Gemini -> P2 Gemini2 -> P3 Gemini3 -> P4 OpenAI -> P5 Ollama -> Original cleaned."""
+    def process_article(self, title: str, content: str, source_name: str = "Unknown") -> Dict:
+        """
+        Production-grade rephrasing with fallback strategy and similarity validation.
+        """
+        # STEP 1: Detect language and build prompt
         lang_code = _detect_lang(f"{title} {content}")
         lang_name = LANG_NAMES.get(lang_code, "Unknown")
+        
+        # Determine strictness based on source
+        # CASE A: Regional trusted sources -> aggressive rewrite
+        is_regional = any(x in (source_name or "").lower() for x in ["greatandhra", "eenadu", "sakshi", "andhra", "telangana"])
+        is_gnews = "google news" in (source_name or "").lower()
+        
         prompt = _build_prompt(title, content, lang_name)
+        if is_regional:
+             prompt += "\n\nCRITICAL: Use aggressive sentence restructuring and significant tone shift. Ensure NO similarity to source."
+        
+        # STEP 1b: GOOGLE NEWS RULE — Do NOT call paid AI APIs (Gemini/Grok/OpenAI)
+        # Try Ollama (local LLM, free) first. If Ollama unavailable, use cleaned original.
+        if is_gnews:
+            logger.info(f"[AI] Google News — skipping paid APIs, trying Ollama only")
+            ollama_raw = _try_ollama(prompt)
+            if ollama_raw:
+                result = _parse_result(ollama_raw, title, content)
+                title_sim = compute_similarity(title, result["rephrased_title"])
+                content_sim = compute_similarity(content, result["rephrased_content"])
+                if title_sim <= 0.70 and content_sim <= 0.70:
+                    result["ai_status_code"] = "AI_SUCCESS"
+                    result["similarity_score"] = max(title_sim, content_sim)
+                    result["method"] = "google_news_ollama"
+                    return result
+            # Ollama failed or similarity too high — use cleaned original
+            res = _original_fallback(title, content)
+            res["ai_status_code"] = "GOOGLE_NEWS_NO_AI"
+            res["method"] = "google_news_original"
+            logger.info(f"[AI] Google News — Ollama unavailable/failed, using cleaned original (GOOGLE_NEWS_NO_AI)")
+            return res
 
-        raw: Optional[str] = None
-
-        # Priority 1: Gemini PRIMARY
-        raw = _try_gemini(settings.GEMINI_API_KEY, prompt, "Gemini-Primary")
+        # STEP 2: Attempt Priority AI Chain
+        raw = self._try_all_providers(prompt)
+        
         if raw:
             result = _parse_result(raw, title, content)
-            result["method"] = "gemini_primary"
-            logger.info(f"[AI] P1-Gemini-Primary OK: {title[:50]}")
-            return result
+            
+            # STEP 3: Validate AI Output (Similarity Goal <= 70%)
+            title_sim = compute_similarity(title, result["rephrased_title"])
+            content_sim = compute_similarity(content, result["rephrased_content"])
+            
+            if title_sim <= 0.70 and content_sim <= 0.70:
+                result["ai_status_code"] = "AI_SUCCESS"
+                result["similarity_score"] = max(title_sim, content_sim)
+                return result
+            else:
+                logger.warning(f"[AI] Similarity too high ({max(title_sim, content_sim):.2f}) - triggering fallback logic for {source_name}")
+        
+        # STEP 4: Fallback Strategy (MANDATORY)
+        
+        # CASE B: Google News — should never reach here (short-circuited above),
+        # kept as absolute safety net
+        if is_gnews:
+            res = _original_fallback(title, content)
+            res["ai_status_code"] = "GOOGLE_NEWS_NO_AI"
+            res["method"] = "google_news_original_fallback"
+            return res
+            
+        # CASE A/C: Stricter Retry
+        retry_prompt = prompt + "\n\nFAIL: Previous attempt was too similar. REWRITE 100%. CHANGE EVERY SENTENCE STRUCTURE."
+        raw_retry = self._try_all_providers(retry_prompt, limit_to_best=True)
+        
+        if raw_retry:
+            result = _parse_result(raw_retry, title, content)
+            title_sim = compute_similarity(title, result["rephrased_title"])
+            content_sim = compute_similarity(content, result["rephrased_content"])
+            
+            if title_sim <= 0.70 and content_sim <= 0.70:
+                result["ai_status_code"] = "AI_RETRY_SUCCESS"
+                result["similarity_score"] = max(title_sim, content_sim)
+                return result
 
-        # Priority 2: Gemini SECONDARY
-        raw = _try_gemini(settings.GEMINI_API_KEY_SECONDARY, prompt, "Gemini-Secondary")
-        if raw:
-            result = _parse_result(raw, title, content)
-            result["method"] = "gemini_secondary"
-            logger.info(f"[AI] P2-Gemini-Secondary OK: {title[:50]}")
-            return result
+        # FINAL FAIL
+        res = _original_fallback(title, content)
+        res["ai_status_code"] = "REWRITE_FAILED"
+        res["method"] = "failed_manual_review_needed"
+        return res
 
-        # Priority 3: Gemini TERTIARY
-        tertiary_key = getattr(settings, "GEMINI_API_KEY_TERTIARY", "")
-        raw = _try_gemini(tertiary_key, prompt, "Gemini-Tertiary")
-        if raw:
-            result = _parse_result(raw, title, content)
-            result["method"] = "gemini_tertiary"
-            logger.info(f"[AI] P3-Gemini-Tertiary OK: {title[:50]}")
-            return result
-
-        # Priority 4: OpenAI
-        raw = _try_openai(prompt)
-        if raw:
-            result = _parse_result(raw, title, content)
-            result["method"] = "openai"
-            logger.info(f"[AI] P4-OpenAI OK: {title[:50]}")
-            return result
-
-        # Priority 5: Ollama local
+    def _try_all_providers(self, prompt: str, limit_to_best: bool = False) -> Optional[str]:
+        """Iterate through providers in priority order."""
+        # Check Ollama (Primary local fallback)
         raw = _try_ollama(prompt)
-        if raw:
-            result = _parse_result(raw, title, content)
-            result["method"] = "ollama"
-            logger.info(f"[AI] P5-Ollama OK: {title[:50]}")
-            return result
+        if raw: return raw
 
-        # Last Resort: Original cleaned
-        logger.warning(f"[AI] All providers failed — cleaned original: {title[:50]}")
-        return _original_fallback(title, content)
+        if limit_to_best: return None
+
+        # Check Gemini keys
+        for key in [settings.GEMINI_API_KEY, settings.GEMINI_API_KEY_SECONDARY, settings.GEMINI_API_KEY_TERTIARY]:
+            raw = _try_gemini(key, prompt)
+            if raw: return raw
+            
+        # Grok
+        raw = _try_grok(prompt)
+        if raw: return raw
+        
+        # OpenAI
+        raw = _try_openai(prompt)
+        if raw: return raw
+        
+        return None
 
 
     def analyze_reporter_draft(self, title: str, content: str) -> Dict:

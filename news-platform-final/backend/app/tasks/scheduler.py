@@ -1,16 +1,19 @@
 """
-In-Process Pipeline Scheduler v2
+In-Process Pipeline Scheduler v3
 =================================
-Runs the full news pipeline automatically:
-  1. Scrape all sources (every 20 min)
-  2. AI rephrase/categorize (every 10 min — more frequent to clear backlog)  
-  3. Update rankings (every 20 min)
-  4. Update category counts (every 20 min)
-  5. AWS sync (every 30 min)
-  6. Social posting (every 30 min)
-  7. Cleanup (every 6 hours)
+Runs the full news pipeline automatically using APScheduler BackgroundScheduler.
+Schedule is read from .env via SCHEDULE_*_MINUTES settings (CronTrigger format).
 
-On startup: runs full pipeline once immediately.
+Jobs registered:
+  1. Scrape all sources     — SCHEDULE_SCRAPE_MINUTES   (default: 0,30)
+  2. AI rephrase/categorize — SCHEDULE_AI_MINUTES       (default: */10)
+  3. Update rankings        — SCHEDULE_RANKING_MINUTES  (default: */10)
+  4. Update category counts — SCHEDULE_CATEGORY_MINUTES (default: */15)
+  5. AWS sync               — SCHEDULE_AWS_SYNC_MINUTES (default: */5)
+  6. Cleanup                — every 6 hours (fixed)
+
+On startup: runs full pipeline once immediately (run_immediately=True).
+Schedule is in sync with Celery Beat when both run concurrently.
 """
 
 import time
@@ -18,6 +21,7 @@ import logging
 import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -111,52 +115,62 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
     _scheduler = BackgroundScheduler(timezone="UTC")
 
     if enable_intervals:
-        # Scraping — every 20 min
+        def _make_cron(minutes_str: str):
+            """Build CronTrigger from .env minute string (e.g. '*/10', '0,30')."""
+            return CronTrigger(minute=minutes_str, timezone="UTC")
+
+        # Scraping — respects SCHEDULE_SCRAPE_MINUTES from .env
         if settings.SCHEDULE_SCRAPE_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("scrape", "app.tasks.celery_app.scrape_all_sources"),
-                IntervalTrigger(minutes=20), id="scrape_job", name="Scraping",
+                _make_cron(settings.SCHEDULE_SCRAPE_MINUTES),
+                id="scrape_job", name="Scraping",
             )
-            logger.info("[SCHED] ✓ Scraping: every 20 min")
+            logger.info(f"[SCHED] ✓ Scraping: minute={settings.SCHEDULE_SCRAPE_MINUTES}")
 
-        # AI Processing — every 10 min
+        # AI Processing — respects SCHEDULE_AI_MINUTES from .env
         if settings.SCHEDULE_AI_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("ai", "app.tasks.celery_app.process_ai_batch"),
-                IntervalTrigger(minutes=10), id="ai_job", name="AI Processing",
+                _make_cron(settings.SCHEDULE_AI_MINUTES),
+                id="ai_job", name="AI Processing",
             )
-            logger.info("[SCHED] ✓ AI Process: every 10 min")
+            logger.info(f"[SCHED] ✓ AI Process: minute={settings.SCHEDULE_AI_MINUTES}")
 
-        # Ranking — every 20 min
+        # Ranking — respects SCHEDULE_RANKING_MINUTES from .env
         if settings.SCHEDULE_RANKING_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("ranking", "app.tasks.celery_app.update_top_100_ranking"),
-                IntervalTrigger(minutes=20), id="ranking_job", name="Ranking",
+                _make_cron(settings.SCHEDULE_RANKING_MINUTES),
+                id="ranking_job", name="Ranking",
             )
-            logger.info("[SCHED] ✓ Ranking: every 20 min")
+            logger.info(f"[SCHED] ✓ Ranking: minute={settings.SCHEDULE_RANKING_MINUTES}")
 
-        # Category counts — every 20 min
+        # Category counts — respects SCHEDULE_CATEGORY_MINUTES from .env
         if settings.SCHEDULE_CATEGORY_COUNT_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("cats", "app.tasks.celery_app.update_category_counts"),
-                IntervalTrigger(minutes=20), id="cats_job", name="Category Counts",
+                _make_cron(settings.SCHEDULE_CATEGORY_MINUTES),
+                id="cats_job", name="Category Counts",
             )
-            logger.info("[SCHED] ✓ Category counts: every 20 min")
+            logger.info(f"[SCHED] ✓ Category counts: minute={settings.SCHEDULE_CATEGORY_MINUTES}")
 
-        # AWS Sync — every 30 min
+        # AWS Sync — respects SCHEDULE_AWS_SYNC_MINUTES from .env
         if settings.SCHEDULE_AWS_SYNC_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("sync", "app.tasks.celery_app.sync_to_aws"),
-                IntervalTrigger(minutes=30), id="sync_job", name="AWS Sync",
+                _make_cron(settings.SCHEDULE_AWS_SYNC_MINUTES),
+                id="sync_job", name="AWS Sync",
             )
-            logger.info("[SCHED] ✓ AWS Sync: every 30 min")
+            logger.info(f"[SCHED] ✓ AWS Sync: minute={settings.SCHEDULE_AWS_SYNC_MINUTES}")
 
-        # Cleanup — every 6 hours
+        # Cleanup — every 6 hours (fixed, not cron-per-minute)
         if settings.SCHEDULE_CLEANUP_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("cleanup", "app.tasks.celery_app.cleanup_old_articles"),
                 IntervalTrigger(hours=6), id="cleanup_job", name="Cleanup",
             )
+            logger.info("[SCHED] ✓ Cleanup: every 6 hours")
     else:
         logger.info("[SCHED] Running in BATCH MODE — Automatic intervals disabled")
 

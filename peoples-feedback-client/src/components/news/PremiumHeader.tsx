@@ -224,7 +224,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
             {menuConfig.map((main: any) => {
               const isDirect = !!main.path;
               const isActiveMain = isDirect && (
-                (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All')) ||
+                (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home')) ||
                 selectedCategory === main.path ||
                 (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
               );
@@ -262,7 +262,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
             <div className="flex items-center gap-1.5 px-1 min-w-max">
               <button onClick={() => handleCat('Home')}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
-                  ${(!selectedCategory || selectedCategory === 'All') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
+                  ${(!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 Home
               </button>
               {activeCategories.filter(c => c !== 'Home').map(cat => (
@@ -310,7 +310,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                 {menuConfig.map((main: any) => {
                   const isDirect = !!main.path;
                   const isActiveMain = isDirect && (
-                    (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All')) ||
+                    (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home')) ||
                     selectedCategory === main.path ||
                     (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
                   );

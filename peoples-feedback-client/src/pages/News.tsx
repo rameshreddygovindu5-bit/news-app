@@ -14,6 +14,7 @@ import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { NewsLayout } from "@/components/news/NewsLayout";
 import { BackToTop } from "@/components/news/BackToTop";
+import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import { useDebounce } from "@/hooks/useDebounce";
 import type { ArticleListResponse } from "@/types/news";
@@ -66,7 +67,7 @@ export default function NewsPage() {
     queryFn: () => newsApi.getArticles({
       page,
       page_size: 20,
-      category:  cat === "All" ? undefined : cat,
+      category: (cat === 'All' || cat === 'Home') ? undefined : cat,
       keyword:   debouncedSearch || undefined,
       // FIX: sort is now actually passed to API
       // Backend interprets: newest = order by published_at desc (default)
@@ -82,6 +83,11 @@ export default function NewsPage() {
 
   return (
     <div className="min-h-screen bg-tricolor-light text-zinc-900">
+      <SEO 
+        title={cat === "All" ? "Latest Headlines" : `${cat} News`}
+        description={debouncedSearch ? `Search results for "${debouncedSearch}" on Peoples Feedback.` : `Latest ${cat} news and updates on Peoples Feedback.`}
+        url={cat === "All" ? "/news" : `/news?category=${cat}`}
+      />
       <PremiumHeader
         selectedCategory={cat}
         onCategoryChange={c => { setCat(c); setPage(1); }}
