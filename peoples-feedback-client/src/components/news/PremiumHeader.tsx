@@ -233,7 +233,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                 <div key={main.name} className="relative group/menu h-12 flex items-center">
                   <button onClick={() => isDirect ? handleCat(main.path!) : null}
                     className={`px-3 lg:px-4 text-[12px] lg:text-[13px] font-black h-12 flex items-center transition-all duration-300 whitespace-nowrap uppercase tracking-wider
-                      ${(isActiveMain || hasActiveChild) ? 'text-transparent bg-gradient-to-r from-[var(--pf-navy)] to-[var(--pf-blue)] bg-clip-text border-b-2 border-[var(--pf-navy)]' : 'text-zinc-600 hover:text-[var(--pf-navy)]'}
+                      ${(isActiveMain || hasActiveChild) ? 'nav-active-tricolor shadow-[inset_0_-1px_0_var(--pf-white)]' : 'text-zinc-600 hover:text-[var(--pf-navy)]'}
                       ${main.isSpecial ? 'telugu !font-bold !tracking-normal !normal-case !text-[14px]' : ''}`}>
                     {main.name}
                     {!isDirect && <span className="ml-1 opacity-50 group-hover/menu:rotate-180 transition-transform text-[8px]">▼</span>}
@@ -261,25 +261,25 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           <nav className="md:hidden flex-1 overflow-x-auto no-scrollbar">
             <div className="flex items-center gap-1.5 px-1 min-w-max">
               <button onClick={() => handleCat('Home')}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all
-                  ${(!selectedCategory || selectedCategory === 'All') ? 'bg-[var(--pf-navy)] text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
+                  ${(!selectedCategory || selectedCategory === 'All') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 Home
               </button>
               {activeCategories.filter(c => c !== 'Home').map(cat => (
                 <button key={cat} onClick={() => handleCat(cat)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all
-                    ${selectedCategory === cat ? 'bg-[var(--pf-saffron)] text-white shadow-md' : 'bg-zinc-100 text-zinc-600 active:bg-zinc-200'}`}>
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
+                    ${selectedCategory === cat ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50 active:bg-zinc-200'}`}>
                   {cat}
                 </button>
               ))}
               <button onClick={() => { setLocation('/telugu'); }}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all telugu
-                  ${location === '/telugu' ? 'bg-[var(--pf-saffron)] text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all telugu border
+                  ${location === '/telugu' ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 తెలుగు
               </button>
               <button onClick={() => { setLocation('/wishes'); }}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all
-                  ${location === '/wishes' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
+                  ${location === '/wishes' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 Wishes
               </button>
             </div>

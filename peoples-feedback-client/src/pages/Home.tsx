@@ -3,7 +3,7 @@
  * FIX: Load More correctly accumulates articles across pages using useInfiniteQuery
  *      instead of replacing them with a new page.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";

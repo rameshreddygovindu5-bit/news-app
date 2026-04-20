@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         # Clean up any stuck 'RUNNING' jobs from previous crashes
         from app.database import SyncSessionLocal
         from app.models.models import JobExecutionLog
-        from sqlalchemy import update
+        from sqlalchemy import update, text
         db = SyncSessionLocal()
         try:
             db.execute(update(JobExecutionLog).where(JobExecutionLog.status == "RUNNING").values(

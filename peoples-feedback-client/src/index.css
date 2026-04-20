@@ -52,11 +52,24 @@ body {
   box-shadow: 0 1px 4px rgba(0,0,0,.12);
 }
 .tricolor-stripe-bottom {
-  height: 3px;
+  height: 4px;
   background: linear-gradient(90deg,
     var(--pf-green)  0%,   var(--pf-green)  33.33%,
-    #fff             33.33%, #fff             66.66%,
+    var(--pf-white)  33.33%, var(--pf-white)  66.66%,
     var(--pf-saffron) 66.66%, var(--pf-saffron) 100%
+  );
+  box-shadow: 0 -1px 4px rgba(0,0,0,.08);
+}
+
+.bg-india-green { background-color: var(--pf-green); }
+.text-india-green { color: var(--pf-green); }
+.border-india-green { border-color: var(--pf-green); }
+
+.india-gradient-bg {
+  background: linear-gradient(135deg, 
+    rgba(255, 153, 51, 0.05) 0%, 
+    rgba(255, 255, 255, 1) 50%, 
+    rgba(19, 136, 8, 0.05) 100%
   );
 }
 
@@ -84,6 +97,34 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
+}
+
+/* ══ Active Menu Indicator (India Flag Style) ══════════════════════════ */
+.nav-active-tricolor {
+  position: relative;
+  color: var(--pf-navy) !important;
+}
+.nav-active-tricolor::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, 
+    var(--pf-saffron) 0%, var(--pf-saffron) 33.33%, 
+    var(--pf-white) 33.33%, var(--pf-white) 66.66%, 
+    var(--pf-green) 66.66%, var(--pf-green) 100%
+  );
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.bg-india-flag {
+  background: linear-gradient(90deg, 
+    var(--pf-saffron) 0%, var(--pf-saffron) 33.33%, 
+    var(--pf-white) 33.33%, var(--pf-white) 66.66%, 
+    var(--pf-green) 66.66%, var(--pf-green) 100%
+  );
 }
 
 /* ══ Saffron gradient text / bg ════════════════════════════════════════ */

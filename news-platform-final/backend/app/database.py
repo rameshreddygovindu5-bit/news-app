@@ -10,7 +10,7 @@ Provides:
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -61,8 +61,10 @@ async def create_tables():
     from app.models import models as _  # noqa: F401
 
     async with async_engine.begin() as conn:
+        # Enable WAL mode for high-concurrency (FastAPI reads while Celery writes)
+        await conn.execute(text("PRAGMA journal_mode=WAL;"))
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("[DB] All tables verified / created")
+    logger.info("[DB] All tables verified / created (WAL Mode)")
 
     await _seed_defaults()
 
