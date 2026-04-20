@@ -357,4 +357,32 @@ class AIService:
         return _original_fallback(title, content)
 
 
+    def analyze_reporter_draft(self, title: str, content: str) -> Dict:
+        """Lightweight analytical call to suggest metadata for reporters."""
+        prompt = f"""ANALYZE THIS DRAFT NEWS:
+TITLE: {title}
+CONTENT: {content[:1000]}
+
+Based on the title and content, suggest EXACTLY ONE category from this allowed list: [{CATEGORIES_STR}].
+Also suggest 5 relevant lowercase tags.
+
+Return ONLY JSON:
+{{
+  "category": "SuggestedCategory",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}}"""
+        # Try primary gemini first
+        keys = ["GEMINI_API_KEY", "GEMINI_API_KEY_SECONDARY", "GEMINI_API_KEY_TERTIARY"]
+        for key_name in keys:
+            key = getattr(settings, key_name, "")
+            raw = _try_gemini(key, prompt, label=key_name)
+            if raw:
+                try:
+                    m = re.search(r'\{[\s\S]*\}', raw)
+                    if m: return json.loads(m.group())
+                except: pass
+        
+        # Simple local fallback if AI fails
+        return {"category": "Home", "tags": ["news"]}
+
 ai_service = AIService()

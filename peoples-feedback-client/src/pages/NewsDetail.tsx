@@ -77,13 +77,48 @@ export default function NewsDetail() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // FIX: Update document title dynamically
+  // FIX: Update document title and SEO meta tags dynamically
   useEffect(() => {
     if (article) {
       const t = getTitle(article);
+      const desc = getSummary(article, 160);
+      const img = getImage(article);
+      const url = window.location.href;
+
       document.title = t ? `${t} — Peoples Feedback` : "Peoples Feedback";
+
+      // SEO Meta Injection
+      const meta = {
+        'description': desc,
+        'og:title': t,
+        'og:description': desc,
+        'og:image': img,
+        'og:url': url,
+        'og:type': 'article',
+        'twitter:card': 'summary_large_image',
+        'twitter:title': t,
+        'twitter:description': desc,
+        'twitter:image': img
+      };
+
+      const tags = [];
+      Object.entries(meta).forEach(([name, content]) => {
+        const tag = document.createElement('meta');
+        if (name.startsWith('og:') || name.startsWith('twitter:')) {
+          tag.setAttribute('property', name);
+        } else {
+          tag.setAttribute('name', name);
+        }
+        tag.setAttribute('content', content || '');
+        document.head.appendChild(tag);
+        tags.push(tag);
+      });
+
+      return () => {
+        document.title = "Peoples Feedback";
+        tags.forEach(tag => document.head.removeChild(tag));
+      };
     }
-    return () => { document.title = "Peoples Feedback"; };
   }, [article]);
 
   // FIX: Related articles with flags=A,Y filter (published only)

@@ -119,17 +119,37 @@ export default function TeluguPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch     = useDebounce(search, 500);
 
-  // Set title and scroll on mount — NO Google Translate reload
+  // SEO Meta Injection for Telugu Page
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
     document.title = "తెలుగు వార్తలు — Peoples Feedback";
-    return () => { document.title = "Peoples Feedback"; };
+    const meta = {
+      'description': "తాజా తెలుగు వార్తలు: నేటి ముఖ్యాంశాలు, ఆంధ్రప్రదేశ్ మరియు తెలంగాణ వార్తలు ఒక్క చోటే. పీపుల్స్ ఫీడ్‌బ్యాక్ తెలుగు వార్తా పోర్టల్.",
+      'og:title': "తెలుగు వార్తలు — పీపుల్స్ ఫీడ్‌బ్యాక్",
+      'og:description': "తాజా తెలుగు వార్తలు మరియు విశ్లేషణలు.",
+      'og:image': "https://images.unsplash.com/photo-1588681664899-f142ff2dc9b1?w=1200&q=80",
+      'twitter:card': 'summary_large_image'
+    };
+    const tags = [];
+    Object.entries(meta).forEach(([name, content]) => {
+      const tag = document.createElement('meta');
+      if (name.startsWith('og:') || name.startsWith('twitter:')) tag.setAttribute('property', name);
+      else tag.setAttribute('name', name);
+      tag.setAttribute('content', content);
+      document.head.appendChild(tag);
+      tags.push(tag);
+    });
+    return () => { 
+      document.title = "Peoples Feedback";
+      tags.forEach(t => document.head.removeChild(t)); 
+    };
   }, []);
 
   const { data, isLoading } = useQuery<ArticleListResponse>({
     queryKey: ["telugu-articles", page, debouncedSearch],
     queryFn: () => newsApi.getTeluguArticles({ page, page_size: 24, keyword: debouncedSearch || undefined }),
     staleTime: 2 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   const changePage = (n: number) => {

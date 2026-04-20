@@ -55,11 +55,7 @@ def build_beat_schedule() -> dict:
     if not settings.SCHEDULER_ENABLED:
         return {}
     jobs = [
-        ("scrape-all-sources",     settings.SCHEDULE_SCRAPE_ENABLED,         "app.tasks.celery_app.scrape_all_sources",     settings.SCHEDULE_SCRAPE_MINUTES),
-        ("process-ai-batch",       settings.SCHEDULE_AI_ENABLED,             "app.tasks.celery_app.process_ai_batch",       settings.SCHEDULE_AI_MINUTES),
-        ("update-top-100",         settings.SCHEDULE_RANKING_ENABLED,        "app.tasks.celery_app.update_top_100_ranking", settings.SCHEDULE_RANKING_MINUTES),
-        ("sync-to-aws",            settings.SCHEDULE_AWS_SYNC_ENABLED,       "app.tasks.celery_app.sync_to_aws",            settings.SCHEDULE_AWS_SYNC_MINUTES),
-        ("update-category-counts", settings.SCHEDULE_CATEGORY_COUNT_ENABLED, "app.tasks.celery_app.update_category_counts", settings.SCHEDULE_CATEGORY_MINUTES),
+        ("master-news-heartbeat",  True,                                     "app.tasks.celery_app.run_master_heartbeat",   "*/10"),
         ("cleanup-old-articles",   settings.SCHEDULE_CLEANUP_ENABLED,        "app.tasks.celery_app.cleanup_old_articles",   settings.SCHEDULE_CLEANUP_MINUTES),
         ("post-to-social",         settings.SCHEDULE_SOCIAL_ENABLED,         "app.tasks.celery_app.post_to_social",         settings.SCHEDULE_SOCIAL_MINUTES),
     ]
@@ -119,21 +115,20 @@ def complete_job(db, log, ok, err, error_summary=None):
 
 def _banner(label, start=True):
     verb = "STARTING" if start else "DONE"
-    logger.info(f"\n{'='*55}\n  {verb}: {label}\n  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n{'='*55}")
+    logger.info(f"\n{'━'*60}\n  {verb}: {label}\n  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n{'━'*60}")
 
 def normalize_title(t): return re.sub(r'[^\w\s]','',t.lower()).strip() if t else ""
 def content_hash(source_id, title): return hashlib.sha256(f"{source_id}{normalize_title(title)}".encode()).hexdigest()
 
-def _trigger_sync_robust():
-    """Trigger AWS sync with fallback to thread if Celery worker is down."""
+def _trigger_full_pipeline():
+    """Trigger the coordinated master heartbeat to ensure all stages (AI -> Rank -> Sync) run in order."""
     try:
-        # Trigger directly with a small delay so other tasks can commit
-        sync_to_aws.apply_async(countdown=10)
-        logger.info("[SYNC] Queued via Celery (apply_async)")
+        run_master_heartbeat.delay()
+        logger.info("[PIPELINE] Master Heartbeat triggered via Celery")
     except Exception as e:
         import threading
-        logger.warning(f"[SYNC] Celery delay failed ({e}) — falling back to thread")
-        threading.Thread(target=sync_to_aws, daemon=True).start()
+        logger.warning(f"[PIPELINE] Celery delay failed ({e}) — falling back to thread")
+        threading.Thread(target=run_master_heartbeat, daemon=True).start()
 
 # ── TASK 1: SCRAPE ────────────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.scrape_all_sources")
@@ -186,8 +181,8 @@ def scrape_all_sources(ignore_window: bool = False):
     finally:
         db.close()
     
-    # Trigger sync after scrape complete
-    _trigger_sync_robust()
+    # Trigger full pipeline after scrape to ensure fresh content flows to AWS
+    _trigger_full_pipeline()
 
     _banner("SCRAPE ALL SOURCES", False)
 
@@ -304,8 +299,8 @@ def process_ai_batch():
     finally:
         db.close()
     
-    # Trigger sync after AI batch complete
-    _trigger_sync_robust()
+    # Trigger rank & sync after AI batch complete
+    _trigger_full_pipeline()
 
     _banner("AI ENRICHMENT", False)
 
@@ -354,8 +349,8 @@ def update_top_100_ranking():
         complete_job(db, log, 0, 0, "Skipped on AWS")
         db.close(); return
     try:
-        # Reset flags
-        db.execute(update(NewsArticle).where(NewsArticle.flag=="Y").values(flag="A"))
+        # Reset flags - MUST update updated_at so sync picks up the change
+        db.execute(update(NewsArticle).where(NewsArticle.flag=="Y").values(flag="A", updated_at=func.now()))
         db.commit()
 
         # Find candidates — expand window until we have enough for 500 target
@@ -435,7 +430,7 @@ def update_top_100_ranking():
         top_ids = sorted(unique_ids, key=lambda aid: score_map.get(aid, 0), reverse=True)[:settings.TOP_NEWS_COUNT]
 
         if top_ids:
-            db.execute(update(NewsArticle).where(NewsArticle.id.in_(top_ids)).values(flag="Y"))
+            db.execute(update(NewsArticle).where(NewsArticle.id.in_(top_ids)).values(flag="Y", updated_at=func.now()))
             db.commit()
 
         complete_job(db, log, len(top_ids), 0)
@@ -446,7 +441,7 @@ def update_top_100_ranking():
         db.close()
     
     # Trigger sync after Ranking complete
-    _trigger_sync_robust()
+    _trigger_full_pipeline()
 
     _banner("TOP-100 RANKING", False)
 
@@ -600,8 +595,8 @@ def sync_to_aws():
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
             db.add(meta); db.commit()
 
-        # Added 5-minute overlap to ensure no records are missed due to transaction timing
-        sync_cutoff = meta.last_sync_at - timedelta(minutes=5)
+        # Added 15-minute overlap (increased from 5) to ensure absolute record capture
+        sync_cutoff = meta.last_sync_at - timedelta(minutes=15)
         
         # Priority: Ensure ALL 'Top News' (flag='Y') are ALWAYS synced if updated in last 48h
         # regardless of incremental meta state, as these are critical for homepage populated.
@@ -717,6 +712,98 @@ def sync_to_aws():
     _banner("AWS SYNC", False)
     _banner("AWS SYNC", False)
 
+
+@celery_app.task(name="app.tasks.celery_app.full_integrity_sync")
+def full_integrity_sync():
+    """Nuclear option sync: Checks every single active local article against AWS."""
+    _banner("FULL INTEGRITY SYNC")
+    db = get_db()
+    log = log_job(db, "full_integrity_sync", "manual")
+    if not log: return
+
+    if not (settings.AWS_DB_HOST and settings.AWS_DB_USER and settings.AWS_DB_PASSWORD):
+        complete_job(db, log, 0, 0, "AWS creds not configured")
+        db.close(); return
+
+    try:
+        # 1. First, call the standard sync_to_aws logic (base sync)
+        # This handles categories, sources, wishes, polls
+        sync_to_aws()
+        
+        # 2. Now perform the deep article scan
+        conn = psycopg2.connect(host=settings.AWS_DB_HOST, port=settings.AWS_DB_PORT, dbname=settings.AWS_DB_NAME, user=settings.AWS_DB_USER, password=settings.AWS_DB_PASSWORD)
+        cur = conn.cursor()
+        
+        # Get ALL local URLs
+        all_local = db.query(NewsArticle).filter(NewsArticle.flag != "D").all()
+        total_count = len(all_local)
+        ok = err = 0
+        
+        SQL = """INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,published_at,rephrased_title,rephrased_content,category,slug,tags,flag,image_url,author,content_hash,is_duplicate,duplicate_of_id,rank_score,telugu_title,telugu_content,ai_status,processed_at,ai_error_count,created_at,updated_at)
+                 VALUES %s
+                 ON CONFLICT (original_url) DO UPDATE SET
+                   flag=EXCLUDED.flag, category=EXCLUDED.category, rank_score=EXCLUDED.rank_score,
+                   telugu_title=EXCLUDED.telugu_title, telugu_content=EXCLUDED.telugu_content,
+                   updated_at=EXCLUDED.updated_at"""
+        
+        from psycopg2.extras import execute_values
+        import json
+        
+        # Process in chunks - PASS 1: Base data (no foreign key for duplicates yet)
+        for i in range(0, total_count, 500):
+            chunk = all_local[i : i + 500]
+            data_to_sync = []
+            for art in chunk:
+                tags = art.tags
+                if tags and isinstance(tags, str):
+                    try: tags = json.loads(tags)
+                    except: tags = []
+                elif not tags: tags = []
+                
+                data_to_sync.append((
+                    art.source_id, art.original_title, art.original_content, art.original_url,
+                    art.original_language, art.published_at, art.rephrased_title, art.rephrased_content,
+                    art.category, art.slug, tags, art.flag, art.image_url, art.author,
+                    art.content_hash, bool(art.is_duplicate), None, art.rank_score, # Pass None for duplicate_of_id
+                    getattr(art,'telugu_title',''), getattr(art,'telugu_content',''),
+                    art.ai_status, art.processed_at, art.ai_error_count,
+                    art.created_at, art.updated_at,
+                ))
+            
+            try:
+                execute_values(cur, SQL, data_to_sync)
+                ok += len(data_to_sync)
+                conn.commit()
+            except Exception as e:
+                logger.error(f"[INTEGRITY-P1] Chunk {i} failed: {e}")
+                conn.rollback(); err += len(data_to_sync)
+
+        # PASS 2: Link duplicates (now that all URLs exist on AWS)
+        if ok > 0:
+            logger.info("[INTEGRITY] PASS 2: Linking duplicates...")
+            dupes = [a for a in all_local if a.duplicate_of_id]
+            for d in dupes:
+                try:
+                    # Get the parent URL locally
+                    parent = db.query(NewsArticle).filter(NewsArticle.id == d.duplicate_of_id).first()
+                    if parent:
+                        # Find parent ID on AWS by URL
+                        cur.execute("SELECT id FROM news_articles WHERE original_url = %s", (parent.original_url,))
+                        aws_parent = cur.fetchone()
+                        if aws_parent:
+                            cur.execute("UPDATE news_articles SET duplicate_of_id = %s WHERE original_url = %s", (aws_parent[0], d.original_url))
+                    if d.id % 50 == 0: conn.commit()
+                except Exception: pass
+            conn.commit()
+        
+        cur.close(); conn.close()
+        complete_job(db, log, ok, err)
+    except Exception as e:
+        logger.error(f"[INTEGRITY] Fatal: {e}"); complete_job(db, log, 0, 0, str(e))
+    finally:
+        db.close()
+    _banner("FULL INTEGRITY SYNC", False)
+
 # ── TASK 5: CATEGORY COUNTS ───────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.update_category_counts")
 def update_category_counts():
@@ -737,7 +824,7 @@ def cleanup_old_articles():
     log = log_job(db, "maintenance")
     if not log: return
     try:
-        res = db.execute(update(NewsArticle).where(NewsArticle.created_at<datetime.now(timezone.utc)-timedelta(days=15), NewsArticle.flag!="D").values(flag="D", deleted_at=func.now()))
+        res = db.execute(update(NewsArticle).where(NewsArticle.flag!="D", NewsArticle.created_at<datetime.now(timezone.utc)-timedelta(days=15)).values(flag="D", deleted_at=func.now(), updated_at=func.now()))
         db.commit(); complete_job(db, log, res.rowcount, 0)
     except Exception as e: logger.error(f"[CLEANUP] {e}"); complete_job(db, log, 0, 0, str(e))
     finally: db.close()
@@ -772,26 +859,57 @@ def post_to_social():
     finally: db.close()
     _banner("SOCIAL POSTING", False)
 
-# ── FULL PIPELINE ─────────────────────────────────────────────────────
-@celery_app.task(name="app.tasks.celery_app.run_full_pipeline")
-def run_full_pipeline(source_id: Optional[int] = None):
-    _banner("FULL PIPELINE")
+@celery_app.task(name="app.tasks.celery_app.run_master_heartbeat")
+def run_master_heartbeat():
+    """Coordinated news pipeline heartbeat — runs every 10 mins.
+    Minimizes sync overlaps and ensures articles move linearly.
+    """
+    _banner("MASTER HEARTBEAT")
     t0 = time.time()
-    logger.info("[PIPELINE] 1/6 Scrape...")
-    if source_id: scrape_source(source_id)
-    else: scrape_all_sources()
-    logger.info("[PIPELINE] 2/6 AI...")
-    process_ai_batch()
-    logger.info("[PIPELINE] 3/6 Ranking...")
-    update_top_100_ranking()
-    logger.info("[PIPELINE] 4/6 AWS Sync...")
-    sync_to_aws()
-    logger.info("[PIPELINE] 5/6 Category Counts...")
-    update_category_counts()
-    logger.info("[PIPELINE] 6/6 Social...")
-    post_to_social()
-    logger.info(f"[PIPELINE] Complete in {time.time()-t0:.1f}s")
-    _banner("FULL PIPELINE", False)
+    db = get_db()
+    
+    # 1. Scrape every 30 mins (on the :00, :30 mark approximately)
+    now = datetime.now(timezone.utc)
+    do_scrape = now.minute in range(0, 10) or now.minute in range(30, 40)
+    
+    if do_scrape and settings.SCHEDULE_SCRAPE_ENABLED:
+        logger.info("[PULSE] Stage 1: Scrape")
+        scrape_all_sources.delay() # Run async to avoid blocking heartbeat if scrape is slow
+    
+    # 1.5. Self-Healing: Reset failed articles for retry
+    try:
+        from sqlalchemy import update
+        res = db.execute(update(NewsArticle).where(NewsArticle.ai_status == "failed", NewsArticle.ai_error_count < 5).values(ai_status="pending", updated_at=func.now()))
+        if res.rowcount > 0: logger.info(f"[PULSE] Stage 1.5: Self-Healing - Retrying {res.rowcount} failed articles")
+        db.commit()
+    except Exception as e: logger.warning(f"[PULSE] Self-healing failed: {e}")
+
+    # 2. AI Enrichment (Every pulse)
+    if settings.SCHEDULE_AI_ENABLED:
+        logger.info("[PULSE] Stage 2: AI")
+        process_ai_batch()
+    
+    # 3. Ranking & Counts (Every pulse)
+    if settings.SCHEDULE_RANKING_ENABLED:
+        logger.info("[PULSE] Stage 3: Ranking")
+        update_top_100_ranking()
+    
+    if settings.SCHEDULE_CATEGORY_COUNT_ENABLED:
+        update_category_counts()
+
+    # 4. Sync to AWS (Every pulse — critical for UI consistency)
+    if settings.SCHEDULE_AWS_SYNC_ENABLED:
+        logger.info("[PULSE] Stage 4: AWS Sync")
+        sync_to_aws()
+
+    # 5. Social Post (Every pulse)
+    if settings.SCHEDULE_SOCIAL_ENABLED:
+        logger.info("[PULSE] Stage 5: Social")
+        post_to_social()
+
+    db.close()
+    logger.info(f"[PULSE] Pulse complete in {time.time()-t0:.1f}s")
+    _banner("MASTER HEARTBEAT", False)
 
 if __name__ == "__main__":
     import sys

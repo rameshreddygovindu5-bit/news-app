@@ -9,15 +9,17 @@ Replaces all one-off scripts. Run from the backend/ directory:
 Commands:
   init-db          Create all DB tables + seed categories + default admin user
   create-admin     Interactively create a new admin user
-  pipeline         Run the full pipeline once (scrape→AI→rank→sync→social)
+  pulse            Run the master heartbeat (AI→Rank→Sync) - Coordinated
+  deep-sync        Nuclear option: Full integrity scan & push to AWS
   scrape           Scrape all enabled sources
   ai               Run AI enrichment batch
-  rank             Update Top-100 ranking (guarantees ≥20 per category)
+  rank             Update Top-100 ranking
   sync             Delta-sync to AWS production DB
   cleanup          Soft-delete articles older than 15 days
   categories       Refresh category article counts
   social           Post top-ranked articles to social media
   status           Show DB counts and last job log
+  legacy-pipeline  Run original fragmented pipeline
 """
 import sys
 import importlib
@@ -119,7 +121,8 @@ def cmd_status():
 COMMANDS = {
     "init-db":      lambda: asyncio.run(cmd_init_db()),
     "create-admin": cmd_create_admin,
-    "pipeline":     lambda: ca_module.run_full_pipeline(),
+    "pulse":        lambda: ca_module.run_master_heartbeat(),
+    "deep-sync":    lambda: ca_module.full_integrity_sync(),
     "scrape":       lambda: ca_module.scrape_all_sources(),
     "ai":           lambda: ca_module.process_ai_batch(),
     "rank":         lambda: ca_module.update_top_100_ranking(),
@@ -128,6 +131,7 @@ COMMANDS = {
     "categories":   lambda: ca_module.update_category_counts(),
     "social":       lambda: ca_module.post_to_social(),
     "status":       cmd_status,
+    "legacy-pipeline": lambda: ca_module.run_full_pipeline(),
 }
 
 if __name__ == "__main__":

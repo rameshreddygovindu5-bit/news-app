@@ -141,6 +141,13 @@ class ArticleApproval(BaseModel):
     action: str  # 'approve', 'approve_direct', 'reject'
     admin_note: Optional[str] = None
 
+class BulkIDs(BaseModel):
+    ids: List[int]
+
+class BulkApproval(BaseModel):
+    ids: List[int]
+    action: str  # 'approve', 'approve_direct', 'reject'
+
 
 # ============ AUTH SCHEMAS ============
 

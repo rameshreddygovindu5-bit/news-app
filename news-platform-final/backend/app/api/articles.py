@@ -13,7 +13,7 @@ from app.database import get_db, AsyncSessionLocal
 from app.models.models import NewsArticle, NewsSource, AdminUser
 from app.schemas.schemas import (
     NewsArticleResponse, NewsArticleUpdate, NewsArticleListResponse,
-    ManualNewsCreate, FlagEnum, ArticleApproval
+    ManualNewsCreate, FlagEnum, ArticleApproval, BulkIDs, BulkApproval
 )
 from app.services.auth_service import get_current_user, require_admin
 from app.services.category_service import category_service
@@ -21,15 +21,15 @@ from app.services.category_service import category_service
 logger = logging.getLogger(__name__)
 
 def trigger_sync():
-    """Trigger AWS sync with fallback to synchronous execution."""
+    """Trigger the coordinated master pipeline (AI -> Rank -> AWS Sync)."""
     try:
-        from app.tasks.celery_app import sync_to_aws
-        sync_to_aws.delay()
+        from app.tasks.celery_app import run_master_heartbeat
+        run_master_heartbeat.delay()
     except Exception:
         # Fallback to direct thread if Celery is down
         import threading
-        from app.tasks.celery_app import sync_to_aws as sync_func
-        threading.Thread(target=sync_func, daemon=True).start()
+        from app.tasks.celery_app import run_master_heartbeat as pulse_func
+        threading.Thread(target=pulse_func, daemon=True).start()
 
 def _make_slug(title: str) -> str:
     import re
@@ -69,12 +69,8 @@ async def _run_ai_and_rank(article_id: int):
             art.rank_score = 500  # High initial score for manual/submitted articles
             await db.commit()
             logger.info(f"[AUTO-AI] Article {article_id} processed + ranked (Y)")
-            # Sync to AWS immediately so local and remote stay in sync
-            try:
-                from app.tasks.celery_app import sync_to_aws
-                sync_to_aws.delay()
-            except Exception:
-                pass
+            # Trigger master pulse immediately
+            trigger_sync()
         except Exception as e:
             logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
 
@@ -290,6 +286,30 @@ async def approve_article(
     return {"message": f"Article {data.action}d", "id": article_id, "new_flag": article.flag}
 
 
+@router.post("/bulk-approve")
+async def bulk_approve_articles(
+    data: BulkApproval,
+    db: AsyncSession = Depends(get_db), admin: AdminUser = Depends(require_admin),
+):
+    """Admin approves/rejects multiple articles at once."""
+    from sqlalchemy import update
+    
+    target_flag = "N"
+    if data.action == "approve_direct": target_flag = "Y"
+    elif data.action == "reject": target_flag = "D"
+    
+    values = {"flag": target_flag, "updated_at": datetime.now(timezone.utc)}
+    if target_flag == "Y": values["processed_at"] = datetime.now(timezone.utc)
+    if target_flag == "D": values["deleted_at"] = datetime.now(timezone.utc)
+
+    stmt = update(NewsArticle).where(NewsArticle.id.in_(data.ids)).values(**values)
+    result = await db.execute(stmt)
+    await db.commit()
+    
+    trigger_sync()
+    return {"message": f"Bulk {data.action} completed", "count": result.rowcount}
+
+
 # ===== REPORTER SUBMISSIONS =====
 
 @router.get("/my-submissions")
@@ -434,11 +454,8 @@ async def delete_article(article_id: int, db: AsyncSession = Depends(get_db), ad
     article.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # Trigger AWS sync immediately after deletion
-    from app.tasks.celery_app import sync_to_aws
-    try:
-        sync_to_aws.delay()
-    except: pass
+    # Trigger master pulse
+    trigger_sync()
 
     return {"message": "Article deleted (soft)", "id": article_id}
 
@@ -481,6 +498,44 @@ async def reprocess_article(
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Reprocess failed: {str(e)[:200]}")
+
+
+@router.post("/bulk-reprocess")
+async def bulk_reprocess_articles(
+    data: BulkIDs,
+    db: AsyncSession = Depends(get_db), admin: AdminUser = Depends(require_admin),
+):
+    """Admin queues multiple articles for AI reprocessing."""
+    from sqlalchemy import update
+    stmt = update(NewsArticle).where(NewsArticle.id.in_(data.ids)).values(
+        ai_status="pending", ai_error_count=0, updated_at=datetime.now(timezone.utc)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    
+    try:
+        from app.tasks.celery_app import process_ai_batch
+        process_ai_batch.delay()
+    except: pass
+    
+    return {"message": "Bulk AI reprocessing queued", "count": result.rowcount}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_articles(
+    data: BulkIDs,
+    db: AsyncSession = Depends(get_db), admin: AdminUser = Depends(require_admin),
+):
+    """Admin soft-deletes multiple articles."""
+    from sqlalchemy import update
+    stmt = update(NewsArticle).where(NewsArticle.id.in_(data.ids)).values(
+        flag="D", deleted_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    
+    trigger_sync()
+    return {"message": "Bulk deletion completed", "count": result.rowcount}
 
 
 @router.post("/manual", status_code=201)
@@ -533,12 +588,32 @@ async def create_manual_article(
     import asyncio
     asyncio.create_task(_run_ai_and_rank(article.id))
     
-    # Trigger AWS sync after AI completes
-    from app.tasks.celery_app import sync_to_aws
-    try:
-        sync_to_aws.apply_async(countdown=15)
-    except: pass
+    # Trigger master pulse
+    trigger_sync()
 
     return {"message": "Article created, AI processing started", "id": article.id}
+
+
+@router.post("/suggest")
+async def suggest_metadata(
+    data: ManualNewsCreate,
+    db: AsyncSession = Depends(get_db), auth: AdminUser = Depends(get_current_user),
+):
+    """AI analyzes draft title/content to suggest category and tags."""
+    if not data.title or not data.content:
+        raise HTTPException(status_code=400, detail="Title and content required for analysis")
+    
+    from app.services.ai_service import ai_service
+    try:
+        # Use a lighter analytical call instead of full processing
+        res = await ai_service.analyze_reporter_draft(data.title, data.content)
+        return {
+            "suggested_category": res.get("category", "Home"),
+            "suggested_tags": res.get("tags", []),
+            "summary": res.get("summary", "")
+        }
+    except Exception as e:
+        logger.error(f"[AI-SUGGEST] Failed: {e}")
+        return {"suggested_category": "Home", "suggested_tags": [], "error": str(e)}
 
 

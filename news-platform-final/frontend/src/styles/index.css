@@ -161,6 +161,8 @@ body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-dar
 .login-card p { color: var(--text-muted); font-size: 13px; text-align: center; }
 
 /* ── Premium News Content ── */
+.row-selected { background: var(--accent-dim) !important; }
+.shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .news-premium-content {
   line-height: 1.8;
   font-size: 14px;

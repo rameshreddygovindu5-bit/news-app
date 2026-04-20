@@ -48,11 +48,15 @@ export const createManualArticle = (data) => api.post('/api/articles/manual', da
 export const reprocessArticle = (id) => api.post(`/api/articles/${id}/reprocess`);
 export const getTopNews = (limit = 100) => api.get('/api/articles/top-news', { params: { limit } });
 export const getArticlesByCategory = (category, params) => api.get(`/api/articles/by-category/${category}`, { params });
+export const bulkDeleteArticles = (ids) => api.post('/api/articles/bulk-delete', { ids });
+export const bulkReprocessArticles = (ids) => api.post('/api/articles/bulk-reprocess', { ids });
 
 // Reporter Submission & Approval
 export const submitArticle = (data) => api.post('/api/articles/submit', data);
+export const suggestMetadata = (data) => api.post('/api/articles/suggest', data);
 export const getPendingArticles = (params) => api.get('/api/articles/pending', { params });
 export const approveArticle = (id, action, note) => api.post(`/api/articles/${id}/approve`, { action, admin_note: note });
+export const bulkApproveArticles = (ids, action) => api.post('/api/articles/bulk-approve', { ids, action });
 export const getMySubmissions = (params) => api.get('/api/articles/my-submissions', { params });
 
 // Sources
@@ -71,6 +75,8 @@ export const createCategory = (data) => api.post('/api/categories', data);
 
 // Scheduler
 export const getSchedulerLogs = (params) => api.get('/api/scheduler/logs', { params });
+export const getSourceErrors = (params) => api.get('/api/scheduler/source-errors', { params });
+export const getPostErrors = (params) => api.get('/api/scheduler/post-errors', { params });
 export const triggerAction = (action, sourceId) => api.post('/api/scheduler/trigger', { action, source_id: sourceId });
 export const getSchedulerConfig = () => api.get('/api/scheduler/config');
 export const updateSchedulerConfig = (data) => api.put('/api/scheduler/config', data);

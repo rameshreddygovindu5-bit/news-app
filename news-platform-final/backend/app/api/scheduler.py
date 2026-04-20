@@ -7,7 +7,7 @@ from sqlalchemy import select, desc
 
 from app.database import get_db
 from app.config import get_settings
-from app.models.models import SchedulerLog, AdminUser, NewsArticle
+from app.models.models import SchedulerLog, AdminUser, NewsArticle, SourceErrorLog, PostErrorLog
 from app.schemas.schemas import (
     SchedulerLogResponse, SchedulerAction,
     SchedulerConfigResponse, SchedulerConfigUpdate
@@ -161,7 +161,7 @@ async def trigger_action(
     """Trigger a pipeline step. Tries Celery async first, falls back to sync execution."""
     from app.tasks.celery_app import (
         scrape_source, scrape_all_sources, process_ai_batch,
-        update_top_100_ranking, sync_to_aws, run_full_pipeline,
+        update_top_100_ranking, sync_to_aws, full_integrity_sync, run_full_pipeline,
         cleanup_old_articles, update_category_counts, post_to_social,
     )
 
@@ -175,6 +175,7 @@ async def trigger_action(
         "trigger_ranking": (lambda: update_top_100_ranking.delay(), lambda: update_top_100_ranking(), "Ranking"),
         "trigger_social": (lambda: post_to_social.delay(), lambda: post_to_social(), "Social posting"),
         "trigger_sync": (lambda: sync_to_aws.delay(), lambda: sync_to_aws(), "AWS sync"),
+        "trigger_deep_sync": (lambda: full_integrity_sync.delay(), lambda: full_integrity_sync(), "Deep integrity sync"),
         "trigger_cleanup": (lambda: cleanup_old_articles.delay(), lambda: cleanup_old_articles(), "Cleanup"),
         "trigger_categories": (lambda: update_category_counts.delay(), lambda: update_category_counts(), "Category update"),
         "trigger_pipeline": (
@@ -205,3 +206,25 @@ async def trigger_action(
         except Exception as sync_err:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail=f"{label} failed: {str(sync_err)[:200]}")
+
+
+@router.get("/source-errors")
+async def get_source_errors(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent scraper errors."""
+    query = select(SourceErrorLog).order_by(desc(SourceErrorLog.created_at)).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/post-errors")
+async def get_post_errors(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent social media posting errors."""
+    query = select(PostErrorLog).order_by(desc(PostErrorLog.created_at)).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()

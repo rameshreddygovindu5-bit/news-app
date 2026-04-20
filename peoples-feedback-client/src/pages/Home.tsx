@@ -17,6 +17,28 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [cat, setCat]       = useState("All");
   const debouncedSearch     = useDebounce(search, 500);
+  
+  // SEO Meta Injection
+  useEffect(() => {
+    document.title = "Peoples Feedback — Latest News & Telugu Updates";
+    const meta = {
+      'description': "Peoples Feedback: The premium news destination for unbiased reporting, breaking news, and cultural updates from Andhra Pradesh, Telangana, and the world.",
+      'og:title': "Peoples Feedback — Indian News Platform",
+      'og:description': "Top news stories, regional updates, and community wishes on Peoples Feedback.",
+      'og:image': "https://images.unsplash.com/photo-1504711434969-e33886168d6c?w=1200&q=80",
+      'twitter:card': 'summary_large_image'
+    };
+    const tags = [];
+    Object.entries(meta).forEach(([name, content]) => {
+      const tag = document.createElement('meta');
+      if (name.startsWith('og:') || name.startsWith('twitter:')) tag.setAttribute('property', name);
+      else tag.setAttribute('name', name);
+      tag.setAttribute('content', content);
+      document.head.appendChild(tag);
+      tags.push(tag);
+    });
+    return () => { tags.forEach(t => document.head.removeChild(t)); };
+  }, []);
 
   // ── Infinite query — accumulates articles correctly ──────────────────
   const {
@@ -42,6 +64,7 @@ export default function Home() {
       return last.page < last.total_pages ? last.page + 1 : undefined;
     },
     staleTime: 2 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   // Flatten all pages into one article array
