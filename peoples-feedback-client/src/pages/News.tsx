@@ -40,7 +40,16 @@ export default function NewsPage() {
 
   const debouncedSearch = useDebounce(search, 500);
 
-  // Sync URL params → state on back/forward
+  // Sync URL params → state on location change (handles back/forward + header nav)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const newCat = p.get("category") || "All";
+    const newSearch = p.get("search") || "";
+    if (newCat !== cat) setCat(newCat);
+    if (newSearch !== search) setSearch(newSearch);
+  // eslint-disable-next-line
+  }, [location]); // re-run when wouter location changes
+
   useEffect(() => {
     const p = getUrlParams();
     if (p.category !== cat) setCat(p.category);
@@ -66,7 +75,8 @@ export default function NewsPage() {
     queryKey: ["news-list", cat, debouncedSearch, page, sort],
     queryFn: () => newsApi.getArticles({
       page,
-      page_size: 20,
+      page_size: 50,
+      flags: 'A,Y',   // Strict: AI-processed only
       category: (cat === 'All' || cat === 'Home') ? undefined : cat,
       keyword:   debouncedSearch || undefined,
       // FIX: sort is now actually passed to API

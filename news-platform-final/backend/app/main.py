@@ -58,6 +58,25 @@ async def lifespan(app: FastAPI):
         logger.error(f"[DB] Table creation/cleanup failed: {exc}")
         logger.error("[DB] Check DATABASE_URL in .env — continuing anyway")
 
+    # 1.5 Reset ALL stuck "processing" articles from any previous crashed run
+    try:
+        from app.database import SyncSessionLocal as _SyncSL
+        from app.models.models import NewsArticle as _NA
+        from sqlalchemy import update as _upd
+        _db = _SyncSL()
+        _reset = _db.execute(
+            _upd(_NA)
+            .where(_NA.ai_status.in_(["processing", "failed"]))  # LOCAL_PARAPHRASE stays — it is valid processed state
+            .values(ai_status="pending", ai_error_count=0)
+        )
+        _db.commit(); _db.close()
+        if _reset.rowcount:
+            logger.info(f"[STARTUP] ✅ Reset {_reset.rowcount} stuck 'processing' articles → pending (ready for AI)")
+        else:
+            logger.info("[STARTUP] No stuck articles found")
+    except Exception as _se:
+        logger.warning(f"[STARTUP] Stuck article reset failed: {_se}")
+
     # 2. Start in-process scheduler (ONLY on local dev)
     # On AWS/Production, the local environment pushes data, so the server
     # should remain passive to save resources.

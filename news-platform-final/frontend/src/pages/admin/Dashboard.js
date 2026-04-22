@@ -52,7 +52,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 20, padding: '12px 16px' }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Quick Pipeline Triggers</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Quick Pipeline Triggers</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 8, height: 8, background: '#4CAF50', borderRadius: '50%', animation: 'pulse 2s infinite' }} />
+            <span style={{ fontSize: 10, color: '#4CAF50', fontWeight: 700, letterSpacing: 1 }}>AUTO-SYNC ACTIVE</span>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-india btn-sm" onClick={() => trigger('trigger_pipeline', 'Full Pipeline')}><IC.Play />Full Pipeline</button>
           <button className="btn btn-secondary btn-sm" onClick={() => trigger('trigger_scrape', 'Scrape')}><IC.Globe />Scrape</button>

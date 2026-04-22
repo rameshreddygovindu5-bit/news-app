@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as api from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { IC } from '../../components/common/Icons';
@@ -9,16 +10,18 @@ import CreateArticleModal from '../../components/modals/CreateArticleModal';
 import EditArticleModal from '../../components/modals/EditArticleModal';
 
 export default function ArticlesPage() {
+  const [searchParams] = useSearchParams();
   const [articles, setArticles] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [tp, setTp] = useState(1);
   const [ld, setLd] = useState(true);
   const [kw, setKw] = useState('');
-  const [search, setSearch] = useState('');
-  const [cat, setCat] = useState('');
-  const [flag, setFlag] = useState('');
-  const [srcId, setSrcId] = useState('');
+  const [search, setSearch] = useState(searchParams.get('keyword') || '');
+  const [cat, setCat] = useState(searchParams.get('category') || '');
+  const [flag, setFlag] = useState(searchParams.get('flag') || '');
+  const [srcId, setSrcId] = useState(searchParams.get('source_id') || '');
+  const [lang, setLang] = useState(searchParams.get('lang') || '');
   const [sources, setSrc] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editA, setEditA] = useState(null);
@@ -27,6 +30,16 @@ export default function ArticlesPage() {
   const { show, ToastContainer } = useToast();
   const debounceRef = useRef(null);
 
+  // Sync state with URL search params
+  useEffect(() => {
+    setSearch(searchParams.get('keyword') || '');
+    setCat(searchParams.get('category') || '');
+    setFlag(searchParams.get('flag') || '');
+    setSrcId(searchParams.get('source_id') || '');
+    setLang(searchParams.get('lang') || '');
+    setPage(1);
+  }, [searchParams]);
+
   const load = useCallback(() => {
     setLd(true);
     const p = { page, page_size: 20 };
@@ -34,6 +47,7 @@ export default function ArticlesPage() {
     if (cat) p.category = cat;
     if (flag) p.flag = flag;
     if (srcId) p.source_id = srcId;
+    if (lang) p.lang = lang;
     api.getArticles(p).then(r => {
       setArticles(r.data.articles);
       setTotal(r.data.total);
@@ -64,7 +78,7 @@ export default function ArticlesPage() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { load(); }, 500);
-  }, [search, page, cat, flag, srcId]);
+  }, [search, page, cat, flag, srcId, lang, load]);
 
   useEffect(() => { 
     api.getSources().then(r => setSrc(r.data)).catch(() => {});
@@ -122,8 +136,14 @@ export default function ArticlesPage() {
             <select className="form-select" value={srcId} onChange={e => { setSrcId(e.target.value); setPage(1) }}>
               <option value="">All</option>{sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select></div>
+          <div><label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>LANG</label>
+            <select className="form-select" value={lang} onChange={e => { setLang(e.target.value); setPage(1) }}>
+              <option value="">All</option>
+              <option value="en">English</option>
+              <option value="te">Telugu</option>
+            </select></div>
           <button className="btn btn-india btn-sm" onClick={() => { setPage(1); load() }} style={{ alignSelf: 'flex-end' }}><IC.Ref />Search</button>
-          <button className="btn btn-secondary" onClick={() => { setKw(''); setCat(''); setFlag(''); setSrcId(''); setPage(1) }}>Clear</button>
+          <button className="btn btn-secondary" onClick={() => { setSearch(''); setCat(''); setFlag(''); setSrcId(''); setLang(''); setPage(1) }}>Clear</button>
           <button className="btn btn-secondary" onClick={load}><IC.Ref /></button>
         </div>
       </div>
@@ -155,9 +175,14 @@ export default function ArticlesPage() {
                     {a.ai_error_count > 0 && <span title={`${a.ai_error_count} AI errors`} style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--india-red)' }} />}
                   </td>
                   <td style={{ maxWidth: 320 }}>
-                    <div style={{ fontWeight: 500, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setViewA(a)}>
+                    <div style={{ fontWeight: 600, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--india-navy)' }} onClick={() => setViewA(a)}>
                       {a.rephrased_title || a.original_title}
                     </div>
+                    {a.telugu_title && (
+                      <div className="telugu-text" style={{ fontSize: 13, color: 'var(--india-saffron)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {a.telugu_title}
+                      </div>
+                    )}
                     {a.ai_status === 'failed' && <span style={{ fontSize: 10, color: 'var(--india-red)' }}>AI failed</span>}
                   </td>
                   <td style={{ fontSize: 11 }}>{a.source_name}</td>

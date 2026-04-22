@@ -3,8 +3,8 @@
  * FIX: Load More correctly accumulates articles across pages using useInfiniteQuery
  *      instead of replacing them with a new page.
  */
-import { useState, useCallback, useEffect } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { NewsLayout } from "@/components/news/NewsLayout";
@@ -20,36 +20,66 @@ export default function Home() {
   const debouncedSearch     = useDebounce(search, 500);
 
   // ── Infinite query — accumulates articles correctly ──────────────────
+  const isHomeFeed = cat === "All" || cat === "Home";
+
+  // ── Home / Top-news feed ─────────────────────────────────────────
   const {
-    data,
-    isLoading,
+    data: topData,
+    isLoading: topLoading,
+    refetch: refetchTop,
+  } = useQuery<NewsArticle[]>({
+    queryKey: ["top-news", cat],
+    queryFn: () => newsApi.getTopNews(200),
+    enabled: isHomeFeed,
+    staleTime: 60 * 1000,          // 1 min
+    refetchInterval: 20 * 1000,    // auto-refresh every 20s for near-realtime updates
+    retry: 3,
+  });
+
+  // ── Category / search feed ───────────────────────────────────────
+  const {
+    data: catData,
+    isLoading: catLoading,
     isFetchingNextPage,
     fetchNextPage,
     hasNextPage,
   } = useInfiniteQuery<ArticleListResponse>({
-    queryKey: ["home-articles", cat, debouncedSearch],
+    queryKey: ["cat-articles", cat, debouncedSearch],
     initialPageParam: 1,
-    queryFn: ({ pageParam = 1 }) =>
-      newsApi.getArticles({
-        page:      pageParam as number,
-        page_size: 25,
-        // "Home" and "All" both mean no category filter — show all latest news
-        category:  (cat === "All" || cat === "Home") ? undefined : cat,
-        keyword:   debouncedSearch || undefined,
-        // Use flags A,Y so articles appear even before ranking job has run
-        flags:     "A,Y",
-      }),
-    getNextPageParam: (last, allPages) => {
-      const totalLoaded = allPages.length * 25;
-      if (totalLoaded >= 100) return undefined; // Cap at 100 articles
-      return last.page < last.total_pages ? last.page + 1 : undefined;
-    },
-    staleTime: 2 * 60 * 1000,
-    refetchInterval: 15 * 60 * 1000,
+    queryFn: ({ pageParam = 1 }) => newsApi.getArticles({
+      page:      pageParam as number,
+      page_size: 50,
+      category:  isHomeFeed ? undefined : cat,
+      keyword:   debouncedSearch || undefined,
+      flags:     "A,Y",
+    }),
+    getNextPageParam: (last) => last.page < last.total_pages ? last.page + 1 : undefined,
+    enabled: !isHomeFeed || !!debouncedSearch,
+    staleTime: 60 * 1000,
+    refetchInterval: 20 * 1000,  // 20s refresh
+    retry: 3,
   });
 
-  // Flatten all pages into one article array
-  const articles: NewsArticle[] = data?.pages.flatMap(p => p.articles) ?? [];
+  const isLoading = isHomeFeed ? topLoading : catLoading;
+
+  // Derive article list — home uses topData, else category pages
+  const articles: NewsArticle[] = isHomeFeed && !debouncedSearch
+    ? (Array.isArray(topData) ? topData : [])
+    : (catData?.pages.flatMap(p => p.articles) ?? []);
+
+  // Auto-refetch more aggressively when there are 0 articles (pipeline still running)
+  const noArticles = !isLoading && articles.length === 0;
+  const refetchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (noArticles) {
+      refetchTimerRef.current = setInterval(() => {
+        refetchTop();
+      }, 10 * 1000); // retry every 10s when empty
+    } else {
+      if (refetchTimerRef.current) clearInterval(refetchTimerRef.current);
+    }
+    return () => { if (refetchTimerRef.current) clearInterval(refetchTimerRef.current); };
+  }, [noArticles, refetchTop]);
 
   const handleCategoryChange = useCallback((c: string) => {
     setCat(c);
@@ -81,8 +111,8 @@ export default function Home() {
           articles={articles}
           isLoading={isLoading}
           selectedCategory={cat}
-          hasMore={!!hasNextPage}
-          onLoadMore={fetchNextPage}
+          hasMore={isHomeFeed ? false : !!hasNextPage}
+          onLoadMore={isHomeFeed ? undefined : fetchNextPage}
           isLoadingMore={isFetchingNextPage}
         />
       </main>

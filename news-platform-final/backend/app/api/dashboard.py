@@ -39,13 +39,30 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         
         local_stats["total"] = sum(v for k,v in local_stats.items() if k not in ["failed_ai", "processed"]) + local_stats.get("processed",0)
         # Actually total is just sum of A, Y, P, N.
-        local_stats["total"] = local_stats["pending_approval"] + local_stats["new"] + local_stats["processed"]
+        # Total = all articles in DB
+        total_res = await db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.flag != "D"))
+        local_stats["total"] = (await db.execute(select(func.count(NewsArticle.id)))).scalar() or 0
 
+        # Count AI processed using ALL known success status codes
+        AI_PROCESSED_STATUSES = [
+            "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
+            "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI",
+            "GOOGLE_NEWS_LOCAL", "LOCAL_PARAPHRASE", "REWRITE_FAILED",
+        ]
         ai_res = await db.execute(select(NewsArticle.ai_status, func.count(NewsArticle.id)).group_by(NewsArticle.ai_status))
+        ai_processed_count = 0
+        ai_pending_count = 0
+        ai_failed_count = 0
         for st, count in ai_res.all():
-            if st == "pending": local_stats["pending_ai"] = count
-            elif st == "completed": local_stats["processed"] = count
-            elif st == "failed": local_stats["failed_ai"] = count
+            if st in ("pending", "processing", "unknown") or st is None:
+                ai_pending_count += count
+            elif st in AI_PROCESSED_STATUSES:
+                ai_processed_count += count
+            elif st == "failed":
+                ai_failed_count += count
+        local_stats["pending_ai"] = ai_pending_count
+        local_stats["processed"] = ai_processed_count
+        local_stats["failed_ai"] = ai_failed_count
 
         logs_res = await db.execute(select(JobExecutionLog).order_by(JobExecutionLog.started_at.desc()).limit(10))
         recent_logs = [{"id": l.id, "job_name": l.job_name, "status": l.status, "rows_ok": l.rows_ok, "rows_err": l.rows_err} for l in logs_res.scalars().all()]

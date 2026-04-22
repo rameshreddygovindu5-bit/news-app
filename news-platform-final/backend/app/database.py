@@ -29,9 +29,12 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # ── Sync engine (Celery workers) ──────────────────────────────────────
-_sync_engine_kwargs = {"echo": False, "pool_pre_ping": True}
-if "sqlite" not in settings.DATABASE_URL_SYNC:
-    _sync_engine_kwargs.update({"pool_size": 10, "max_overflow": 5})
+_sync_engine_kwargs = {
+    "echo": False, 
+    "pool_pre_ping": True,
+    "pool_size": 20,
+    "max_overflow": 10
+}
 
 sync_engine = create_engine(settings.DATABASE_URL_SYNC, **_sync_engine_kwargs)
 SyncSessionLocal = sessionmaker(bind=sync_engine)

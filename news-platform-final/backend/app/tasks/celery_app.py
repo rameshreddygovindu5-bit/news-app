@@ -130,6 +130,21 @@ def _trigger_full_pipeline():
         logger.warning(f"[PIPELINE] Celery delay failed ({e}) — falling back to thread")
         threading.Thread(target=run_master_heartbeat, daemon=True).start()
 
+
+def trigger_immediate_sync():
+    """Trigger a lightweight immediate AWS sync (article mutations: create/update/delete).
+    Runs in background thread so it never blocks the API response."""
+    import threading
+    def _sync():
+        try:
+            sync_to_aws()
+        except Exception as e:
+            logger.warning(f"[SYNC] Immediate sync failed: {e}")
+    try:
+        sync_to_aws.delay()
+    except Exception:
+        threading.Thread(target=_sync, daemon=True).start()
+
 # ── TASK 1: SCRAPE ────────────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.scrape_all_sources")
 def scrape_all_sources(ignore_window: bool = False):
@@ -148,30 +163,14 @@ def scrape_all_sources(ignore_window: bool = False):
             q = q.filter(func.lower(NewsSource.name).in_(names))
         sources = q.all()
 
-        # Filter sources by time window (unless ignore_window=True)
-        filtered_sources = []
-        if ignore_window:
-            filtered_sources = sources
-        else:
-            from datetime import timezone
-            now_utc = datetime.now(timezone.utc)
-            now_est_hour = (now_utc - timedelta(hours=5)).hour
-            now_ist_hour = (now_utc + timedelta(hours=5, minutes=30)).hour
-            
-            for s in sources:
-                name_l = s.name.lower()
-                if "google" in name_l:
-                    if 5 <= now_est_hour < 21: filtered_sources.append(s)
-                    else: logger.info(f"[SCHED] Skipping {s.name} (Outside 5AM-9PM EST window)")
-                else:
-                    if 5 <= now_ist_hour < 21: filtered_sources.append(s)
-                    else: logger.info(f"[SCHED] Skipping {s.name} (Outside 5AM-9PM IST window)")
+        # Filter sources by time window - removed for 24/7 automation
+        filtered_sources = sources
 
         if not filtered_sources:
             complete_job(db, log, 0, 0, "No sources in active time window"); return
         
         ok = err = 0
-        with ThreadPoolExecutor(max_workers=16) as pool:
+        with ThreadPoolExecutor(max_workers=min(settings.AI_CONCURRENCY, 8)) as pool:
             futures = {pool.submit(worker_scrape_source, s.id, log.run_id): s for s in filtered_sources}
             for f in as_completed(futures):
                 r = f.result(); ok+=r.get("inserted",0); err+=r.get("errors",0)
@@ -278,38 +277,112 @@ def process_ai_batch():
         complete_job(db, log, 0, 0, "Skipped on AWS")
         db.close(); return
     try:
-        subq = db.query(NewsArticle.id).filter(NewsArticle.ai_status.in_(["pending","unknown"]), NewsArticle.is_duplicate==False).order_by(func.random()).limit(settings.AI_BATCH_SIZE).subquery()
-        db.execute(update(NewsArticle).where(NewsArticle.id.in_(select(subq))).values(ai_status="processing"))
+        # STEP 0: Reset ALL stuck "processing" articles — key fix for the 353 stuck bug.
+        # Articles stuck in "processing" were picked by a previous batch that crashed.
+        # ANY article still "processing" after >5 min must be re-queued.
+        stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        stuck_reset = db.execute(
+            update(NewsArticle)
+            .where(
+                NewsArticle.ai_status == "processing",
+                NewsArticle.updated_at < stuck_cutoff
+            )
+            .values(ai_status="pending", updated_at=func.now())
+        )
+        if stuck_reset.rowcount:
+            logger.info(f"[AI] Reset {stuck_reset.rowcount} stuck 'processing' → pending")
         db.commit()
-        articles = db.query(NewsArticle).filter(NewsArticle.ai_status=="processing").all()
-        if not articles:
-            complete_job(db, log, 0, 0, "No pending"); return
+
+        # STEP 1: Fetch pending IDs as Python list (avoids SQLAlchemy subquery cache bug)
+        pending_rows = db.execute(
+            select(NewsArticle.id)
+            .where(
+                NewsArticle.ai_status.in_(["pending", "unknown"]),
+                NewsArticle.is_duplicate == False,
+            )
+            .order_by(func.random())
+            .limit(settings.AI_BATCH_SIZE)
+        ).fetchall()
+
+        if not pending_rows:
+            logger.info("[AI] No pending articles in this batch — all up to date")
+            complete_job(db, log, 0, 0, "No pending articles")
+            return
+
+        article_ids = [row[0] for row in pending_rows]
+        logger.info(f"[AI] Processing batch of {len(article_ids)} articles")
+
+        # STEP 2: Mark exactly those IDs as "processing" (no subquery — direct IN list)
+        db.execute(
+            update(NewsArticle)
+            .where(NewsArticle.id.in_(article_ids))
+            .values(ai_status="processing", updated_at=func.now())
+        )
+        db.commit()
+
+        # STEP 3: Process each article in parallel threads
         ok = err = 0
         with ThreadPoolExecutor(max_workers=min(settings.AI_CONCURRENCY, 8)) as pool:
-            futures = [pool.submit(worker_process_ai, a.id) for a in articles]
-            for f in as_completed(futures):
-                if f.result(): ok+=1
-                else: err+=1
+            futures = {pool.submit(worker_process_ai, aid): aid for aid in article_ids}
+            for future in as_completed(futures, timeout=300):  # 5-min max per batch
+                try:
+                    if future.result(timeout=120):  # 2-min max per article
+                        ok += 1
+                    else:
+                        err += 1
+                except TimeoutError:
+                    logger.warning("[AI] Worker timed out — article reset to pending")
+                    err += 1
+                except Exception as ex:
+                    logger.error(f"[AI] Worker exception: {ex}")
+                    err += 1
+
         complete_job(db, log, ok, err)
+        # Auto-trigger ranking and sync immediately after AI batch completes
+        if ok > 0:
+            try:
+                import threading
+                def _auto_rank_sync():
+                    try:
+                        update_top_100_ranking()
+                        sync_to_aws()
+                    except Exception as ae:
+                        logger.warning(f"[AI→RANK→SYNC] auto chain failed: {ae}")
+                threading.Thread(target=_auto_rank_sync, daemon=True).start()
+                logger.info(f"[AI] Auto-triggered Ranking+Sync for {ok} processed articles")
+            except Exception: pass
     except Exception as e:
-        logger.error(f"[AI] Fatal: {e}"); complete_job(db, log, 0, 1, str(e))
+        logger.error(f"[AI] Fatal: {e}", exc_info=True)
+        complete_job(db, log, 0, 1, str(e))
+        # Reset any articles left as "processing" from this failed batch
+        try:
+            db.execute(
+                update(NewsArticle)
+                .where(NewsArticle.ai_status == "processing")
+                .values(ai_status="pending", updated_at=func.now())
+            )
+            db.commit()
+        except Exception:
+            pass
     finally:
         db.close()
-    
+
     _banner("AI ENRICHMENT", False)
 
 def worker_process_ai(article_id: int) -> bool:
     db = SyncSessionLocal()
     try:
-        art = db.query(NewsArticle).get(article_id)
+        art = db.get(NewsArticle, article_id)  # SQLAlchemy 2.0 API (replaces deprecated .get())
         if not art: return False
         
         # New: Pass source name for specific fallback rules
         source_name = art.source.name if art.source else "Unknown"
         res = ai_service.process_article(art.original_title, art.original_content or "", source_name=source_name)
         
-        art.rephrased_title = res["rephrased_title"]
-        art.rephrased_content = res["rephrased_content"]
+        # Ensure rephrased fields are never empty, strip source names for copyright
+        from app.services.ai_service import _strip_source_names
+        art.rephrased_title = _strip_source_names(res.get("rephrased_title") or art.original_title or "")
+        art.rephrased_content = res.get("rephrased_content") or art.original_content or ""
         art.telugu_title = res.get("telugu_title", "")
         art.telugu_content = res.get("telugu_content", "")
         
@@ -320,23 +393,24 @@ def worker_process_ai(article_id: int) -> bool:
         else:
             art.category = res["category"]
 
-        art.slug = res.get("slug") or art.slug
+        new_slug = res.get("slug", "")
+        if new_slug and len(new_slug) > 3:
+            art.slug = new_slug
         art.tags = res.get("tags", [])
+        art.image_url = res.get("image_url", art.image_url)
         
         # Use specific status code
         # Valid: AI_SUCCESS, AI_RETRY_SUCCESS, UNPROCESSED_AI_FALLBACK, GOOGLE_NEWS_NO_AI, REWRITE_FAILED
         status_code = res.get("ai_status_code", "completed")
         art.ai_status = status_code
         
-        # Rule enforcement
-        if status_code == "REWRITE_FAILED":
-            art.flag = "A"  # Fallback to original cleaned if AI fails, still show on site
-            logger.warning(f"[AI] {source_name} rephrasing failed similarity check for article {article_id} - sent to admin review")
-        elif status_code == "GOOGLE_NEWS_NO_AI":
-            art.flag = "A"  # AI intentionally skipped — still eligible for ranking
-            logger.info(f"[AI] Google News article {article_id} — AI disabled (GOOGLE_NEWS_NO_AI), formatted and staged")
-        else:
-            art.flag = "A"  # A=AI Processed, ready for Ranking/Sync
+        # STRICT: every processed article gets flag=A regardless of which engine ran.
+        # LOCAL_PARAPHRASE = structured HTML from local engine (publicly visible)
+        # AI_SUCCESS/AI_RETRY_SUCCESS = processed by Gemini/Grok/OpenAI (best quality)
+        # GOOGLE_NEWS_NO_AI = cleaned original (publicly visible)
+        art.flag = "A"
+        engine = "cloud AI" if status_code in ("AI_SUCCESS","AI_RETRY_SUCCESS") else "local engine"
+        logger.info(f"[AI] Article {article_id} → flag=A via {engine} ({status_code})")
             
         art.processed_at = datetime.now(timezone.utc)
         
@@ -379,7 +453,7 @@ def update_top_100_ranking():
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status.in_([
                     "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
-                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI", "REWRITE_FAILED"
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"
                 ]),
                 NewsArticle.created_at>=cutoff,
                 NewsArticle.is_duplicate==False,
@@ -392,10 +466,10 @@ def update_top_100_ranking():
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status.in_([
                     "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
-                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI", "REWRITE_FAILED"
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"
                 ]),
                 NewsArticle.is_duplicate==False,
-            ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()
+            ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()  # Fetch 2× then trim to TOP_NEWS_COUNT=200
             logger.info(f"[RANK] Fallback candidates: {len(candidates)}")
 
         if not candidates:
@@ -432,7 +506,7 @@ def update_top_100_ranking():
             if len(cat_arts) < settings.TOP_NEWS_MIN_PER_CATEGORY:
                 extra = db.query(NewsArticle).filter(
                     NewsArticle.category==cname,
-                    NewsArticle.ai_status.in_(["completed", "AI_SUCCESS", "AI_RETRY_SUCCESS", "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"]),
+                    NewsArticle.ai_status.in_(["completed","AI_SUCCESS","AI_RETRY_SUCCESS","UNPROCESSED_AI_FALLBACK","GOOGLE_NEWS_NO_AI","GOOGLE_NEWS_LOCAL","LOCAL_PARAPHRASE","REWRITE_FAILED"]),
                     NewsArticle.is_duplicate==False,
                     NewsArticle.created_at>=two_months_ago,
                 ).order_by(desc(NewsArticle.rank_score)).limit(settings.TOP_NEWS_MIN_PER_CATEGORY).all()
@@ -636,12 +710,11 @@ def sync_to_aws():
             meta = SyncMetadata(target="AWS_PROD", last_sync_at=datetime.now(timezone.utc)-timedelta(days=7))
             db.add(meta); db.commit()
 
-        # Added 15-minute overlap (increased from 5) to ensure absolute record capture
-        sync_cutoff = meta.last_sync_at - timedelta(minutes=15)
+        # 2-minute overlap to ensure no record missed during sync transitions
+        sync_cutoff = meta.last_sync_at - timedelta(minutes=2)
         
-        # Priority: Ensure ALL 'Top News' (flag='Y') are ALWAYS synced if updated in last 48h
-        # regardless of incremental meta state, as these are critical for homepage populated.
-        high_priority_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        # Always sync Top News (flag=Y) updated in last 7 days — critical for homepage
+        high_priority_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         
         records = db.query(NewsArticle).filter(
             (NewsArticle.updated_at > sync_cutoff) | 
@@ -649,8 +722,11 @@ def sync_to_aws():
         ).all()
         
         if not records:
+            # Even with no new articles, ensure categories/sources are up to date
+            logger.info("[AWS] No new article delta — skipping article sync (categories/sources already synced)")
             cur.close(); conn.close()
-            complete_job(db, log, 0, 0, "No delta")
+            meta.last_sync_at = datetime.now(timezone.utc); db.commit()
+            complete_job(db, log, 0, 0, "No article delta — metadata synced")
             db.close(); return
 
         ok = err = 0
@@ -908,19 +984,31 @@ def run_master_heartbeat():
     t0 = time.time()
     db = get_db()
     
-    # 1. Scrape every 30 mins (on the :00, :30 mark approximately)
-    now = datetime.now(timezone.utc)
-    do_scrape = now.minute in range(0, 10) or now.minute in range(30, 40)
-    
-    if do_scrape and settings.SCHEDULE_SCRAPE_ENABLED:
+    # 1. Scrape (Every pulse ensures maximum freshness)
+    if settings.SCHEDULE_SCRAPE_ENABLED:
         logger.info("[PULSE] Stage 1: Scrape")
-        scrape_all_sources.delay() # Run async to avoid blocking heartbeat if scrape is slow
+        try:
+            scrape_all_sources(ignore_window=True) # Run synchronously within heartbeat for order
+        except Exception as e:
+            logger.warning(f"[PULSE] Scrape failed: {e}")
     
-    # 1.5. Self-Healing: Reset failed articles for retry
+    # 1.5. Self-Healing: Reset failed + stuck "processing" articles
     try:
         from sqlalchemy import update
-        res = db.execute(update(NewsArticle).where(NewsArticle.ai_status == "failed", NewsArticle.ai_error_count < 5).values(ai_status="pending", updated_at=func.now()))
-        if res.rowcount > 0: logger.info(f"[PULSE] Stage 1.5: Self-Healing - Retrying {res.rowcount} failed articles")
+        # Reset failed/unknown/REWRITE_FAILED articles so Gemini retries them
+        res1 = db.execute(update(NewsArticle).where(
+            NewsArticle.ai_status.in_(["failed", "unknown"]),  # REWRITE_FAILED retired — local engine handles all failures
+            NewsArticle.ai_error_count < 5
+        ).values(ai_status="pending", ai_error_count=0, updated_at=func.now()))
+        # Reset stuck "processing" articles (stuck > 5 min)
+        stuck_cut = datetime.now(timezone.utc) - timedelta(minutes=5)
+        res2 = db.execute(update(NewsArticle).where(
+            NewsArticle.ai_status == "processing",
+            NewsArticle.updated_at < stuck_cut,
+        ).values(ai_status="pending", updated_at=func.now()))
+        total_reset = (res1.rowcount or 0) + (res2.rowcount or 0)
+        if total_reset > 0:
+            logger.info(f"[PULSE] Stage 1.5: Self-Healing — reset {total_reset} articles to pending")
         db.commit()
     except Exception as e: logger.warning(f"[PULSE] Self-healing failed: {e}")
 
@@ -938,8 +1026,20 @@ def run_master_heartbeat():
         update_category_counts()
 
     # 4. Sync to AWS (Every pulse — critical for UI consistency)
+    # Also force-sync any articles that are stuck in "processing" state > 30 min
     if settings.SCHEDULE_AWS_SYNC_ENABLED:
         logger.info("[PULSE] Stage 4: AWS Sync")
+        try:
+            # Reset stuck processing articles before sync
+            stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+            stuck = db.execute(update(NewsArticle)
+                .where(NewsArticle.ai_status == "processing", NewsArticle.updated_at < stuck_cutoff)
+                .values(ai_status="pending", updated_at=func.now()))
+            if stuck.rowcount:
+                db.commit()
+                logger.info(f"[PULSE] Reset {stuck.rowcount} stuck 'processing' articles to pending")
+        except Exception as e:
+            logger.warning(f"[PULSE] Stuck article reset failed: {e}")
         sync_to_aws()
 
     # 5. Social Post (Every pulse)

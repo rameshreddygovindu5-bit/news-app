@@ -10,6 +10,7 @@ export interface NewsArticle {
   original_content?: string;
   original_url?: string;
   original_language?: string;
+  ai_status?: string;  // AI_SUCCESS | LOCAL_PARAPHRASE | etc.
   published_at?: string;
   translated_title?: string;
   translated_content?: string;
@@ -69,22 +70,65 @@ export const hasTelugu = (a: NewsArticle): boolean =>
   !!(a.telugu_title && a.telugu_title.trim() && a.telugu_content && a.telugu_content.trim());
 
 /** Get display title for a given language */
+const STRIP_SOURCES = /\b(Times of India|Al Jazeera|OneIndia|GreatAndhra|Great Andhra|Eenadu|Sakshi|TV9 Telugu|TV9|PrabhaNews|Prabha News|Telugu123|TeluguTimes|Telugu Times|Google News|ANI|PTI|IANS|Reuters|AFP|BBC|NDTV|Times Now|Republic|Zee News|ABP|India Today|News18)\b/gi;
+function stripSourceNames(text: string): string {
+  return text ? text.replace(STRIP_SOURCES, 'Peoples Feedback') : text;
+}
+
 export const getTitle = (a: NewsArticle, lang: 'en' | 'te' = 'en'): string => {
-  if (lang === 'te' && a.telugu_title?.trim()) return a.telugu_title.trim();
-  return stripHtml(a.rephrased_title || a.original_title || '');
+  if (lang === 'te') {
+    // Telugu: prefer telugu_title, then original (for Telugu-source articles not yet AI processed)
+    const teTitle = a.telugu_title?.trim();
+    if (teTitle) return teTitle;
+    // If article is from a Telugu source, show original_title as fallback
+    if ((a as any).original_language === 'te') return stripHtml(a.original_title || '');
+  }
+  return stripSourceNames(stripHtml(a.rephrased_title || a.original_title || ''));
 };
 
 /** Get display content (HTML safe) for a given language */
+export function sanitizeArticleHtml(html: string): string {
+  if (!html || !html.trim()) return '';
+  if (!/<[a-zA-Z]/.test(html)) {
+    return html.trim().split(/\n\s*\n/).filter(Boolean)
+      .map(p => `<p>${p.trim().replace(/\n/g, ' ')}</p>`).join('\n');
+  }
+  // Fix unclosed strong tags that make entire article bold
+  html = html.replace(/<p><strong>((?:(?!<\/strong>).){200,})<\/p>/g,
+    (_m, inner) => `<p><strong>${inner}</strong></p>`);
+  // Remove empty list items
+  html = html.replace(/<li><b>[^<]+:<\/b>\s*<\/li>/g, '');
+  html = html.replace(/<ul>\s*<\/ul>/g, '');
+  // Remove duplicate paragraphs
+  const seen = new Set<string>();
+  html = html.replace(/<p>(.*?)<\/p>/gs, (_m, inner) => {
+    const key = inner.trim().toLowerCase().slice(0, 80);
+    if (seen.has(key)) return '';
+    seen.add(key);
+    return `<p>${inner}</p>`;
+  });
+  return html.trim();
+}
+
 export const getContent = (a: NewsArticle, lang: 'en' | 'te' = 'en'): string => {
-  const raw =
-    lang === 'te' && a.telugu_content?.trim()
+  let raw: string;
+  if (lang === 'te') {
+    // Telugu: prefer AI-generated Telugu, then original content for Telugu sources
+    raw = a.telugu_content?.trim()
       ? a.telugu_content
-      : a.rephrased_content || a.original_content || '';
+      : ((a as any).original_language === 'te'
+          ? (a.original_content || a.rephrased_content || '')
+          : (a.rephrased_content || a.original_content || ''));
+  } else {
+    raw = a.rephrased_content || a.original_content || '';
+  }
   if (!raw) return '';
-  // Already HTML — return as-is
-  if (/<(p|br|div|ul|li|b|strong)/i.test(raw)) return raw;
+  // Already HTML — sanitize and return
+  if (/<(p|br|div|ul|li|b|strong)/i.test(raw)) {
+    return stripSourceNames(sanitizeArticleHtml(raw));
+  }
   // Plain text — wrap paragraphs
-  return raw
+  return stripSourceNames(raw)
     .trim()
     .split(/\n\s*\n/)
     .map(p => p.trim())
@@ -94,8 +138,15 @@ export const getContent = (a: NewsArticle, lang: 'en' | 'te' = 'en'): string => 
 };
 
 /** Plain-text excerpt */
-export const getSummary = (a: NewsArticle, max = 180): string => {
-  const raw = (a.rephrased_content || a.original_content || '')
+export const getSummary = (a: NewsArticle, max = 180, lang: 'en' | 'te' = 'en'): string => {
+  let raw = '';
+  if (lang === 'te') {
+    raw = (a.telugu_content || a.rephrased_content || a.original_content || '');
+  } else {
+    raw = (a.rephrased_content || a.original_content || '');
+  }
+  
+  raw = stripSourceNames(raw)
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .trim();
@@ -104,22 +155,21 @@ export const getSummary = (a: NewsArticle, max = 180): string => {
 
 import { API_BASE } from "@/lib/api";
 
-/** Best available image URL */
+/** Best available image URL — always returns a valid image, never undefined */
 export const getImage = (a: NewsArticle): string => {
-  const src = (a.source_name || "").toLowerCase();
-  
-  // Requirement: TV9 and Sakshi source images should be replaced by category-wise placeholders
-  if (src.includes("tv9") || src.includes("sakshi")) {
-    return categoryPlaceholder(a.category);
+  const u = a.image_url?.trim();
+
+  // Relative upload path → our own server (safe to show)
+  if (u && (u.startsWith("/uploads") || u.startsWith("uploads/"))) {
+    const base = (API_BASE || "").replace(/\/$/, "");
+    return `${base}/${u.replace(/^\//, "")}`;
   }
 
-  const u = a.image_url?.trim();
-  if (!u) return categoryPlaceholder(a.category);
-  if (u.startsWith('/uploads')) {
-    const base = API_BASE.replace(/\/$/, '');
-    return `${base}${u}`;
-  }
-  return u;
+  // External URL — use it but NewsLayout will overlay PF logo
+  if (u && u.startsWith("http") && u !== "null" && u !== "undefined") return u;
+
+  // No valid image → PF-branded category placeholder
+  return categoryPlaceholder(a.category);
 };
 
 /** Strip HTML tags */
@@ -130,24 +180,25 @@ function stripHtml(s: string): string {
 /** Category-specific placeholder images */
 export function categoryPlaceholder(cat?: string): string {
   const map: Record<string, string> = {
-    home:          'https://images.unsplash.com/photo-1504711434969-e33886168d6c?w=800&q=80',
-    world:         'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80',
-    politics:      'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=800&q=80',
-    business:      'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
-    tech:          'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80',
-    technology:    'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80',
-    health:        'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&q=80',
-    science:       'https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80',
-    entertainment: 'https://images.unsplash.com/photo-1603190287605-e6ade32fa852?w=800&q=80',
-    events:        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
-    sports:        'https://images.unsplash.com/photo-1461896836934-bd45ba6b0e28?w=800&q=80',
-    education:     'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&q=80',
-    environment:   'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
-    travel:        'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80',
-    surveys:       'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80',
-    polls:         'https://images.unsplash.com/photo-1540910419892-4a39d20b2944?w=800&q=80',
-    general:       'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&q=80', // Newspaper photo
-    telugu:        'https://images.unsplash.com/photo-1588681664899-f142ff2dc9b1?w=800&q=80', // Indian flag/culture
+    home:          '/placeholders/general.png',
+    general:       '/placeholders/general.png',
+    politics:      '/placeholders/politics.png',
+    andhra:        '/placeholders/politics.png',
+    telangana:     '/placeholders/politics.png',
+    world:         '/placeholders/world.png',
+    business:      '/placeholders/business.png',
+    tech:          '/placeholders/tech.png',
+    technology:    '/placeholders/tech.png',
+    sports:        '/placeholders/sports.png',
+    entertainment: '/placeholders/entertainment.png',
+    
+    health:        '/placeholders/health.png',
+    science:       '/placeholders/science.png',
+    crime:         '/placeholders/general.png',
+    weather:       '/placeholders/general.png',
+    hindi:         '/placeholders/general.png',
+    education:     '/placeholders/general.png',
+    travel:        '/placeholders/general.png',
   };
   const key = (cat || '').toLowerCase().trim();
   return map[key] ?? map.general ?? map.home;

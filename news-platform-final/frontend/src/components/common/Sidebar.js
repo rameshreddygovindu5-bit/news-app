@@ -11,6 +11,7 @@ export function Sidebar({onLogout}) {
   const adminNav = [
     {p:'/',l:'Dashboard',i:IC.Dash},
     {p:'/articles',l:'Articles',i:IC.Doc},
+    {p:'/articles?lang=te',l:'Telugu News',i:IC.Globe},
     {p:'/pending',l:'Pending Approval',i:IC.Check},
     {p:'/sources',l:'Sources',i:IC.Globe},
     {p:'/top-news',l:'Top 100 News',i:IC.Star},
@@ -39,11 +40,15 @@ export function Sidebar({onLogout}) {
         <span>{isAdmin?'Admin':'Reporter'} · {user?.username}</span>
       </div>
       <nav className="sidebar-nav">
-        {nav.map(n=>(
-          <Link key={n.p} to={n.p} className={`nav-item ${loc.pathname===n.p?'active':''}`}>
-            <n.i/>{n.l}
-          </Link>
-        ))}
+        {nav.map(n => {
+          const fullPath = loc.pathname + loc.search;
+          const isActive = n.p.includes('?') ? fullPath === n.p : loc.pathname === n.p;
+          return (
+            <Link key={n.p} to={n.p} className={`nav-item ${isActive ? 'active' : ''}`}>
+              <n.i />{n.l}
+            </Link>
+          );
+        })}
       </nav>
       <div className="sidebar-footer" style={{padding: '16px 0', borderTop: '1px solid var(--border-light)'}}>
         <button className="nav-item logout-btn" onClick={onLogout} style={{width:'100%', border:'none', background:'none', cursor:'pointer', textAlign:'left'}}>

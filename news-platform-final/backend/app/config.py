@@ -52,7 +52,7 @@ class Settings(BaseSettings):
             _logger.warning("[CONFIG] GEMINI_API_KEY not set — AI rephrasing will use local/original fallback only.")
 
     APP_NAME: str = "News Aggregation Platform"
-    APP_VERSION: str = "2.2.0"  # Audit fixes: 2026-04-20
+    APP_VERSION: str = "3.1.0"  # Automation + UI fixes  # Full reset + strict AI filtering
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production"  # MUST override in .env for production
 
@@ -86,8 +86,8 @@ class Settings(BaseSettings):
 
     # ── AI (chain: gemini_primary → gemini_secondary → openai → local → original) ─
     AI_PROVIDER_CHAIN: List[str] = ["gemini", "gemini2", "gemini3", "grok", "openai", "local", "original"]
-    AI_BATCH_SIZE: int = 200
-    AI_CONCURRENCY: int = 8
+    AI_BATCH_SIZE: int = 100  # Smaller batches = faster per-batch completion
+    AI_CONCURRENCY: int = 12  # More parallel threads
     AI_MAX_RETRIES: int = 2
     GEMINI_API_KEY: str = ""  # Must be set in .env — never hardcode
     GEMINI_API_KEY_SECONDARY: str = ""  # Must be set in .env
@@ -116,7 +116,9 @@ class Settings(BaseSettings):
     IS_LOCAL_DEV: bool = True
 
     # ── Ranking ───────────────────────────────────────────────────────
-    TOP_NEWS_COUNT: int = 500
+    TOP_NEWS_COUNT: int = 200          # Total top-ranked articles selected globally
+    HOME_FEED_LIMIT: int = 200          # Max articles shown on Home feed (flag=Y only)
+    CATEGORY_PAGE_SIZE: int = 50        # Articles per category page (flags A,Y)
     TOP_NEWS_MAX_AGE_DAYS: int = 60
     TOP_NEWS_MAX_PER_CATEGORY: int = 80
     TOP_NEWS_MIN_PER_CATEGORY: int = 30   # guarantee min 30 per category
@@ -156,8 +158,8 @@ class Settings(BaseSettings):
     SCHEDULE_SOCIAL_ENABLED: bool = True
 
     SCHEDULE_SCRAPE_MINUTES: str = "0,30"
-    SCHEDULE_AI_MINUTES: str = "*/10"
-    SCHEDULE_RANKING_MINUTES: str = "*/10"
+    SCHEDULE_AI_MINUTES: str = "*/5"   # AI runs every 5 min for fast processing
+    SCHEDULE_RANKING_MINUTES: str = "*/5"  # Rank every 5 min
     SCHEDULE_AWS_SYNC_MINUTES: str = "*/5"
     SCHEDULE_CATEGORY_MINUTES: str = "*/15"
     SCHEDULE_CLEANUP_MINUTES: str = "*/30"

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, desc
 
 from app.database import get_db, AsyncSessionLocal
+from app.config import get_settings
 from app.models.models import NewsArticle, NewsSource, AdminUser
 from app.schemas.schemas import (
     NewsArticleResponse, NewsArticleUpdate, NewsArticleListResponse,
@@ -19,17 +20,16 @@ from app.services.auth_service import get_current_user, require_admin
 from app.services.category_service import category_service
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 def trigger_sync():
-    """Trigger the coordinated master pipeline (AI -> Rank -> AWS Sync)."""
+    """Trigger immediate AWS sync after any article mutation (create/update/delete)."""
     try:
-        from app.tasks.celery_app import run_master_heartbeat
-        run_master_heartbeat.delay()
-    except Exception:
-        # Fallback to direct thread if Celery is down
-        import threading
-        from app.tasks.celery_app import run_master_heartbeat as pulse_func
-        threading.Thread(target=pulse_func, daemon=True).start()
+        from app.tasks.celery_app import trigger_immediate_sync
+        trigger_immediate_sync()
+    except Exception as e:
+        import threading, logging
+        logging.getLogger(__name__).warning(f"[SYNC] trigger failed: {e}")
 
 def _make_slug(title: str) -> str:
     import re
@@ -114,13 +114,15 @@ async def list_articles(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = None, category: Optional[str] = None,
     source_id: Optional[int] = None, flag: Optional[str] = None,
+    lang: Optional[str] = None,
     flags: Optional[str] = None, has_telugu: Optional[str] = None,
     telugu_page: Optional[bool] = Query(None),
     date_from: Optional[str] = None, date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """List articles. Use `flags=A,Y` for published-only (public client).
-    Use `flag=N` for single flag. `flags` takes precedence over `flag`."""
+    """List articles — PUBLIC endpoint.
+    Default flags = A,Y (AI-processed only). N-flag (unprocessed) never shown publicly.
+    Admin panel uses explicit flag=N/P to see pending articles."""
     query = select(NewsArticle, NewsSource.name.label("source_name")).join(
         NewsSource, NewsArticle.source_id == NewsSource.id)
     count_query = select(func.count(NewsArticle.id)).select_from(NewsArticle)
@@ -135,22 +137,45 @@ async def list_articles(
         ))
     if category: filters.append(NewsArticle.category == category)
     if source_id: filters.append(NewsArticle.source_id == source_id)
+    if lang:
+        if lang.lower() in ('te', 'telugu'):
+            # Telugu page: articles with Telugu content OR from Telugu-language sources
+            # This ensures the page is populated even before AI generates telugu_title
+            filters.append(or_(
+                and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
+                NewsArticle.original_language == 'te',
+            ))
+        elif lang.lower() in ('hi', 'hindi'):
+            # Hindi page: original language is Hindi OR has Hindi in tags
+            filters.append(NewsArticle.original_language == 'hi')
+        elif lang.lower() in ('en', 'english'):
+            # English default: must have rephrased English content
+            filters.append(or_(
+                and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
+                NewsArticle.original_language == 'en'
+            ))
     if flags:
         flag_list = [f.strip() for f in flags.split(",") if f.strip()]
         filters.append(NewsArticle.flag.in_(flag_list))
     elif flag:
         filters.append(NewsArticle.flag == flag)
+    # Language-specific content filters
+    # IMPORTANT: only apply default English filter when NO lang param is specified
+    # (avoids original_language='te' AND original_language='en' conflict)
     if has_telugu == 'true':
         filters.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
     elif telugu_page:
-        # Strictly Telugu page content
-        filters.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
-    else:
-        # Default (Home/English pages): Must have English content
         filters.append(or_(
-            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
-            NewsArticle.original_language == 'en'
+            and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
+            NewsArticle.original_language == 'te'
         ))
+    elif not lang:
+        # Default English pages: show English-sourced articles only
+        filters.append(NewsArticle.original_language == 'en')
+
+    # STRICT: if no flags param supplied, default to A,Y (AI-processed) — never N
+    if not flags and not flag:
+        filters.append(NewsArticle.flag.in_(["A", "Y"]))
 
     if date_from: filters.append(NewsArticle.created_at >= date_from)
     if date_to: filters.append(NewsArticle.created_at <= date_to)
@@ -169,30 +194,64 @@ async def list_articles(
 
 @router.get("/top-news")
 async def get_top_news(
-    limit: int = Query(500, ge=1, le=1000), 
+    limit: int = Query(200, ge=1, le=500),
     telugu_page: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(NewsArticle, NewsSource.name.label("source_name")).join(
-        NewsSource, NewsArticle.source_id == NewsSource.id
-    ).where(NewsArticle.flag == "Y", NewsArticle.is_duplicate == False)
-    
-    if telugu_page:
-        query = query.where(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
-    else:
-        query = query.where(or_(
-            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
-            NewsArticle.original_language == 'en'
-        ))
-        
-    query = query.order_by(desc(NewsArticle.published_at), desc(NewsArticle.created_at)).limit(limit)
-    rows = (await db.execute(query)).all()
-    return [article_to_response(r[0], r[1]) for r in rows]
+    """Home feed — flag=Y first (ranked). Falls back to flag=A when no Y articles exist yet.
+    This ensures content appears immediately after AI processing, before ranking runs."""
+
+    def _lang_filter(q, telugu_page):
+        if telugu_page:
+            return q.where(or_(
+                and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
+                NewsArticle.original_language == 'te'
+            ))
+        return q.where(NewsArticle.original_language == 'en')
+
+    cap = min(limit, settings.HOME_FEED_LIMIT)
+
+    # ── Try flag=Y first (ranked top news) ───────────────────────────
+    q_y = _lang_filter(
+        select(NewsArticle, NewsSource.name.label("source_name")).join(
+            NewsSource, NewsArticle.source_id == NewsSource.id
+        ).where(NewsArticle.flag == "Y", NewsArticle.is_duplicate == False),
+        telugu_page
+    ).order_by(
+        desc(NewsArticle.rank_score),
+        desc(NewsArticle.published_at),
+        desc(NewsArticle.created_at)
+    ).limit(cap)
+
+    rows = (await db.execute(q_y)).all()
+
+    # ── Fallback: flag=A (AI-processed, not yet ranked) ───────────────
+    # Happens on fresh install before first ranking job runs
+    if not rows:
+        q_a = _lang_filter(
+            select(NewsArticle, NewsSource.name.label("source_name")).join(
+                NewsSource, NewsArticle.source_id == NewsSource.id
+            ).where(
+                NewsArticle.flag.in_(["A", "Y"]),
+                NewsArticle.is_duplicate == False,
+                NewsArticle.ai_status.in_([
+                    "AI_SUCCESS", "AI_RETRY_SUCCESS", "LOCAL_PARAPHRASE",
+                    "GOOGLE_NEWS_NO_AI", "completed"
+                ]),
+            ),
+            telugu_page
+        ).order_by(
+            desc(NewsArticle.published_at),
+            desc(NewsArticle.created_at)
+        ).limit(cap)
+        rows = (await db.execute(q_a)).all()
+
+    return [article_to_response(r[0], "Peoples Feedback") for r in rows]
 
 
 @router.get("/by-category/{category}")
 async def get_articles_by_category(
-    category: str, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    category: str, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100),
     telugu_page: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -203,12 +262,11 @@ async def get_articles_by_category(
         base = [NewsArticle.category == category, NewsArticle.flag.in_(["A", "Y"]), NewsArticle.is_duplicate == False]
     
     if telugu_page:
-        base.append(and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''))
-    else:
         base.append(or_(
-            and_(NewsArticle.rephrased_title != None, NewsArticle.rephrased_title != ''),
-            NewsArticle.original_language == 'en'
+            and_(NewsArticle.telugu_title != None, NewsArticle.telugu_title != ''),
+            NewsArticle.original_language == 'te',
         ))
+    # No English restriction — show all articles in any language for by-category
 
     total_result = await db.execute(select(func.count(NewsArticle.id)).where(and_(*base)))
     total = total_result.scalar() or 0

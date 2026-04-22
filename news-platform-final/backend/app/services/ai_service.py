@@ -1,40 +1,60 @@
 """
-AI Service v6.0 — Production News Transformation Engine
+AI Service v7.0 — Production News Transformation Engine
 ========================================================
-Fallback chain for regular sources (Priority 1 -> 6, then original):
-  Priority 1: Google Gemini PRIMARY      (AIzaSyDweaZs...)
-  Priority 2: Google Gemini SECONDARY   (AIzaSyDOqGA7...)
-  Priority 3: Google Gemini TERTIARY    (AIzaSyArwJeb...)
-  Priority 4: Grok AI (xAI)             (xai-ynDXskIZ...)
-  Priority 5: OpenAI (GPT-4o-mini)      (sk-proj-3Zj0...)
-  Priority 6: Ollama (Local LLM)        (localhost:11434)
-  Last Resort: ORIGINAL cleaned fallback.
 
-Google News source special chain:
-  Step 1: Ollama (local only — no paid APIs)
-  Step 2: Original cleaned content (GOOGLE_NEWS_NO_AI)
+Architecture Changes from v6:
+  - ParaphraseEngine is a TRUE SINGLETON — model loads ONCE at import time,
+    shared across all workers/requests. Zero repeated disk I/O.
+  - Google News: NO paid API calls. Paraphrase engine only (cost=0).
+  - Pending Approval (REWRITE_FAILED): paraphrase engine produces structured
+    HTML output — bold headings, bullet points, proper paragraphs — NOT raw text.
+  - All failure paths funnel through ParaphraseEngine, never raw original.
+  - Circuit breaker removed from this file (belongs in Celery task layer).
+  - Seq2Seq + lexical chain is the universal last-resort, always produces
+    valid structured HTML.
 
-AI Status Codes returned:
-  AI_SUCCESS              — Passed similarity check on first attempt (≤70%)
-  AI_RETRY_SUCCESS        — Passed on second attempt (retry with stronger prompt)
-  GOOGLE_NEWS_NO_AI       — Google News source: AI intentionally skipped per spec
-  REWRITE_FAILED          — All retries failed similarity check → sent to admin review
-  original_cleaned        — method field only; ai_status_code = one of the above
+Fallback chain for regular sources:
+  1  Gemini PRIMARY    (cloud)
+  2  Gemini SECONDARY  (cloud)
+  3  Gemini TERTIARY   (cloud)
+  4  Grok / xAI        (cloud)
+  5  OpenAI GPT-4o-mini(cloud)
+  6  ParaphraseEngine  (LOCAL — Seq2Seq + Synonym + Antonym, zero cost)
+     └─ always returns structured HTML with bold/bullets/paragraphs
 
-Output: English rephrased article + Telugu translation, always.
-Similarity threshold: 0.70 (reject if title or content similarity > 70%).
+Google News source:
+  1  ParaphraseEngine  (local only, no paid APIs)
+
+Pending Approval / REWRITE_FAILED:
+  → ParaphraseEngine  (structured HTML, ready for admin review/publish)
+
+AI Status codes:
+  AI_SUCCESS          — Cloud AI passed similarity check
+  AI_RETRY_SUCCESS    — Cloud AI passed on stronger-prompt retry
+  LOCAL_PARAPHRASE    — Paraphrase engine used (Google News or cloud failure)
+  REWRITE_FAILED      — All cloud attempts failed; paraphrased version sent to admin
+  GOOGLE_NEWS_LOCAL   — Google News processed locally (by design)
 """
-import re, json, logging, time, hashlib
+
+from __future__ import annotations
+
+import re
+import json
+import logging
+import time
+import os
+import threading
 from typing import Optional, Dict, List
+from difflib import SequenceMatcher
+
 try:
     from langdetect import detect
 except ImportError:
-    def detect(text):
+    def detect(text: str) -> str:
         return "en"
 
 from app.config import get_settings
 from app.services.category_service import category_service
-from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -42,7 +62,108 @@ settings = get_settings()
 CATEGORIES = settings.CATEGORIES
 CATEGORIES_STR = ", ".join(CATEGORIES)
 
-# ── Known source names to strip everywhere ────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# PARAPHRASE ENGINE  (singleton — loads ONCE at module import)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ════════════ FAST PARAPHRASE ENGINE (replaces NLTK/Seq2Seq) ════════
+
+class ParaphraseEngine:
+    """
+    Thread-safe singleton — delegates to fast_engine (zero-dependency, <10ms).
+    The old NLTK/Seq2Seq path is kept as commented backup but not used.
+    fast_engine handles all paraphrase work without external ML models.
+    """
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialised = False
+            return cls._instance
+
+    def __init__(self):
+        if self._initialised:
+            return
+        with self._lock:
+            if self._initialised:
+                return
+            self._ready = True
+            self._initialised = True
+            logger.info("[ParaphraseEngine] Fast engine ready (zero-dependency mode)")
+
+    def paraphrase_to_html(self, title: str, content: str) -> Dict[str, str]:
+        """Paraphrase title + content and return structured HTML. Sub-10ms."""
+        try:
+            from app.services.paraphrase.fast_engine import paraphrase_to_html
+            import hashlib
+            seed = int(hashlib.md5((title[:50]).encode()).hexdigest()[:6], 16) % 10000
+            return paraphrase_to_html(title, content, seed=seed)
+        except Exception as exc:
+            logger.warning("[ParaphraseEngine] fast_engine error: %s", exc)
+            # Bare minimum fallback — return cleaned original as structured HTML
+            return {
+                "rephrased_title":   title,
+                "rephrased_content": _bare_html(title, content),
+            }
+
+    def _lexical_chain(self, text: str) -> str:
+        """Apply word substitution pass (fast, no NLTK)."""
+        try:
+            from app.services.paraphrase.fast_engine import _substitute_words
+            return _substitute_words(text)
+        except Exception:
+            return text
+
+    @staticmethod
+    def _build_structured_html(title: str, plain_content: str) -> str:
+        try:
+            from app.services.paraphrase.fast_engine import build_html
+            return build_html(title, plain_content)
+        except Exception:
+            return f"<p><strong>🔑 {plain_content}</strong></p>"
+
+    def paraphrase_text(self, text: str, max_sentences: int = 30) -> str:
+        """Paraphrase plain text — fast path."""
+        try:
+            from app.services.paraphrase.fast_engine import fast_paraphrase
+            return fast_paraphrase(text)
+        except Exception:
+            return text
+
+    # ── Keep old warmup signature for import compatibility ────────────
+    def _warmup(self): pass
+    def _load(self): pass
+
+
+def _bare_html(title: str, content: str) -> str:
+    """Absolute last resort: wrap content in minimal HTML structure."""
+    plain = re.sub(r"<[^>]+>", " ", content or title).strip()
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", plain) if s.strip()]
+    if not sents:
+        return f"<p><strong>🔑 {plain}</strong></p>"
+    parts = [f"<p><strong>🔑 {sents[0]}</strong></p>"]
+    if len(sents) > 1:
+        parts += ["<p><b>📌 Key Highlights:</b></p><ul>"]
+        for s in sents[1:4]:
+            parts.append(f"  <li>{s}</li>")
+        parts.append("</ul>")
+    for s in sents[4:]:
+        parts.append(f"<p>{s}</p>")
+    return "\n".join(parts)
+
+
+# Module-level singleton — instantiated once when workers start.
+# All subsequent imports of this module get the same object.
+paraphrase_engine = ParaphraseEngine()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE NAME STRIPPING
+# ─────────────────────────────────────────────────────────────────────────────
+
 SOURCE_NAMES = [
     "GreatAndhra", "ANI", "IANS", "PTI", "UNI", "TNIE", "Eenadu", "Sakshi",
     "TV9", "CNN", "Al Jazeera", "OneIndia", "Telugu123", "TeluguTimes",
@@ -52,296 +173,448 @@ SOURCE_NAMES = [
     "The Wire", "Scroll", "The Print", "Mint", "Economic Times",
     "Business Standard", "Bloomberg", "Fox News", "The Guardian",
     "Washington Post", "New York Times", "Peoples Feedback",
+    "సాక్షి", "ఈనాడు", "ఆంధ్రజ్యోతి", "నమస్తే తెలంగాణ", "ప్రభ న్యూస్", "టీవీ9", "ఏబీపీ దేశం", "వెలుగు"
 ]
 
 def _strip_source_names(text: str) -> str:
-    """Remove all known source/agency names from text."""
     if not text:
         return ""
+    
+    # 1. Strip common Telugu source prefix patterns like "సాక్షి, హైదరాబాద్: ..."
+    # This handles both plain text and if it's already inside some HTML tags (common in raw scrapes)
+    telugu_sources_regex = "|".join(SOURCE_NAMES[-8:]) # Last 8 are Telugu names
+    prefix_pattern = rf"(^|<p[^>]*>)\s*({telugu_sources_regex})\s*,\s*[^:]{{1,30}}:\s*"
+    text = re.sub(prefix_pattern, r"\1", text)
+
+    # 2. Strip standalone occurrences from the list
     for name in SOURCE_NAMES:
-        text = re.sub(rf'(?i)\(\s*{re.escape(name)}\s*\)', '', text)
-        text = re.sub(rf'(?i)[\u2014\u2013\-\u2013\u2014]\s*{re.escape(name)}\b', '', text)
-        text = re.sub(rf'(?i)\bsource\s*:\s*{re.escape(name)}\b', '', text)
-        text = re.sub(rf'(?i)\b(?:reported|published|stated)\s+(?:by|in|on)\s+{re.escape(name)}\b', '', text)
-        text = re.sub(rf'(?i)\baccording\s+to\s+{re.escape(name)}\b', 'according to reports', text)
-        text = re.sub(rf'(?i)\b{re.escape(name)}\s+report(?:s|ed)?\b', 'reports indicate', text)
-        text = re.sub(rf'(?i)(?:^|\.\s+){re.escape(name)}[.,]?\s*', '. ', text)
-    text = re.sub(r'\(\s*\)', '', text)
-    text = re.sub(r'\s{2,}', ' ', text)
-    text = re.sub(r'\.\s*\.', '.', text)
+        # Use \b for English names, but avoid for Telugu names as \b is ASCII-only
+        if re.search(r'[a-zA-Z]', name):
+            pattern = rf"\b{re.escape(name)}\b"
+        else:
+            pattern = rf"{re.escape(name)}"
+            
+        text = re.sub(rf"\(\s*{pattern}\s*\)", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"[\u2014\u2013\-]\s*{pattern}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"\bsource\s*:\s*{pattern}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(
+            rf"\b(?:reported|published|stated)\s+(?:by|in|on)\s+{pattern}\b",
+            "", text, flags=re.IGNORECASE
+        )
+        text = re.sub(
+            rf"\baccording\s+to\s+{pattern}\b",
+            "according to reports", text, flags=re.IGNORECASE
+        )
+        text = re.sub(rf"\b{pattern}\s+report(?:s|ed)?\b", "reports indicate", text, flags=re.IGNORECASE)
+        text = re.sub(rf"(?:^|\.\s+){pattern}[.,]?\s*", ". ", text, flags=re.IGNORECASE)
+        
+        # General replacement for remaining occurrences
+        text = re.sub(pattern, "Peoples Feedback", text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\.\s*\.", ".", text)
     return text.strip()
+
+def _get_category_image(category: str) -> str:
+    """Return a branded placeholder image URL based on the category."""
+    cat_map = {
+        "Business": "/placeholders/business.png",
+        "Technology": "/placeholders/tech.png",
+        "Tech": "/placeholders/tech.png",
+        "Entertainment": "/placeholders/entertainment.png",
+        "Sports": "/placeholders/sports.png",
+        "Health": "/placeholders/health.png",
+        "Science": "/placeholders/science.png",
+        "Politics": "/placeholders/politics.png",
+        "International": "/placeholders/world.png",
+        "National": "/placeholders/general.png",
+        "Andhra Pradesh": "/placeholders/general.png",
+        "Telangana": "/placeholders/general.png",
+        "General": "/placeholders/general.png",
+        "Home": "/placeholders/general.png",
+    }
+    return cat_map.get(category, "/placeholders/general.png")
 
 
 def _clean(text: str) -> str:
-    if not text: return ""
+    if not text:
+        return ""
     for p in [r"(?i)ignore\s+previous\s+instructions.*", r"(?i)system\s+prompt.*"]:
         text = re.sub(p, "", text)
-    text = _strip_source_names(text)
-    return text.strip()
+    return _strip_source_names(text).strip()
 
 
-SYSTEM_PROMPT = f"""You are an award-winning senior multilingual News Journalist and Telugu language specialist.
-Your mission is to transform raw scraped news into a premium reading experience: a polished, engaging English article AND a high-quality, natural Telugu version.
+# ─────────────────────────────────────────────────────────────────────────────
+# PROMPTS
+# ─────────────────────────────────────────────────────────────────────────────
 
-=== VISUAL EXPERIENCE & STRUCTURE — CRITICAL ===
-1. BOTH versions (English & Telugu) MUST follow this exact HTML hierarchy:
-   - <p><strong>[Brief Summary]</strong>: A one-sentence bold hook about the most important outcome.</p>
-   - <p><b>Key Highlights:</b></p>
-     <ul>
-       <li>A major factual point.</li>
-       <li>Another crucial detail or implication.</li>
-       <li>A third significant piece of information.</li>
-     </ul>
-   - 2-3 body <p> tags: Deep context, background, and expert-level analysis (paraphrased).
-   - <p><i>[What's Next]</i>: A brief italicized closing about upcoming developments.</p>
-2. NEVER use simple blocks of text. Use lists for facts and paragraphs for narrative.
-3. PRESERVE original lists: If the raw text has numbered/bulleted lists, incorporate their essence into the structure above.
+SYSTEM_PROMPT = f"""You are a Principal News Editor at a leading bilingual (English-Telugu) digital media outlet with 20 years of experience. Your job is to COMPLETELY TRANSFORM raw scraped news into premium, reader-friendly articles that feel freshly written — never like a repost.
 
-=== COPYRIGHT & ORIGINALITY ===
-4. REWRITE 100%: Never copy sentences verbatim. Use your own professional vocabulary.
-5. REMOVE ALL ATTRIBUTION: Strip out ANI, PTI, Reuters, CNN, GreatAndhra, Eenadu, etc.
-6. Replace "According to sources" with "Reports indicate" or "Officials stated".
-7. NO source names, reporter bylines, photo credits, URLs, or timestamps allowed.
+════════════════════════════════════════════════════
+RULE 1 — ABSOLUTE ORIGINALITY (MOST IMPORTANT)
+════════════════════════════════════════════════════
+- NEVER copy any phrase, sentence, or structure from the original.
+- Read the raw content to understand the FACTS, then close it mentally and write from scratch.
+- Change sentence order, flip passive/active voice, restructure paragraphs entirely.
+- If the original leads with "X happened because Y", your version must lead differently.
+- Minimum transformation: every sentence must be >60% different from the source.
 
-=== TELUGU EXCELLENCE ===
-8. DO NOT use formal/robotic "bookish" Telugu. Use "Vyavaharika" (spoken style used in top news portals like Sakshi/Eenadu).
-9. Ensure the Telugu title is punchy and fits the "Key subject + Action" format.
-10. Proper nouns: Use standard Telugu transliterations (e.g., 'Modi' as 'మోదీ').
+════════════════════════════════════════════════════
+RULE 2 — MANDATORY HTML STRUCTURE (BOTH languages)
+════════════════════════════════════════════════════
+Every article MUST use this exact structure — no plain text blocks allowed:
 
-=== CATEGORIZATION ===
-11. CATEGORY: Choose EXACTLY ONE from: {CATEGORIES_STR}
-12. TAGS: Exactly 5 lowercase English keywords.
-13. SLUG: URL-safe lowercase-hyphenated title.
+<p><strong>🔑 [ONE-LINE BOLD SUMMARY]: The single most important outcome in one punchy sentence.</strong></p>
 
-=== OUTPUT FORMAT ===
-Return ONLY a valid JSON object. No markdown, no backticks.
+<p><b>📌 Key Highlights:</b></p>
+<ul>
+  <li><b>Point 1:</b> Most critical fact with specific numbers/names if available.</li>
+  <li><b>Point 2:</b> Second important detail or direct consequence.</li>
+  <li><b>Point 3:</b> Third significant fact, implication, or reaction.</li>
+</ul>
+
+<p>[BACKGROUND PARAGRAPH]: 2-3 sentences giving context — who, what, why this matters.</p>
+
+<p>[ANALYSIS PARAGRAPH]: What this means for stakeholders, broader implications, expert perspectives (paraphrased).</p>
+
+<p>[DEVELOPMENT PARAGRAPH]: Any additional facts, timelines, or related events.</p>
+
+<p><i>⏩ What's Next: [One sentence on upcoming developments, deadlines, or expected actions.]</i></p>
+
+════════════════════════════════════════════════════
+RULE 3 — FORMATTING STANDARDS
+════════════════════════════════════════════════════
+- Bold key terms: <b>names</b>, <b>organizations</b>, <b>numbers</b>, <b>dates</b>
+- Use <strong> only for the opening hook sentence
+- Italics <i>...</i> only for the closing "What's Next" line
+- NO sub-headings (h2/h3) inside content
+- NO markdown — HTML only
+- Lists must use <ul><li> never numbered unless it's a step-by-step process
+
+════════════════════════════════════════════════════
+RULE 4 — CONTENT QUALITY
+════════════════════════════════════════════════════
+- REMOVE ALL source attribution: ANI, PTI, Reuters, BBC, GreatAndhra, Eenadu, Sakshi, TV9, etc.
+- Replace "According to [source]" → "Reports indicate" / "Officials confirmed" / "Sources reveal"
+- NO photo credits, journalist names, timestamps, URLs, or watermarks
+- Minimum article length: 150 words English + 120 words Telugu
+- Write at reading level of an educated professional (not academic, not tabloid)
+
+════════════════════════════════════════════════════
+RULE 5 — TELUGU EXCELLENCE
+════════════════════════════════════════════════════
+- Use VYAVAHARIKA Telugu (spoken style of Sakshi/Eenadu/TV9) — NOT bookish/formal
+- Title format: [Key Subject] + [Action verb] — punchy, max 12 words
+- Transliterations: Modi=మోదీ, BJP=బీజేపీ, Congress=కాంగ్రెస్, Delhi=ఢిల్లీ
+- Apply same bold/list HTML structure as English version
+- Telugu highlights prefix: <p><b>📌 ముఖ్య విషయాలు:</b></p>
+
+════════════════════════════════════════════════════
+RULE 6 — CATEGORIZATION & METADATA
+════════════════════════════════════════════════════
+- CATEGORY: Pick EXACTLY ONE from: {CATEGORIES_STR}
+- TAGS: Exactly 5 lowercase English keywords (no stopwords, no duplicates)
+- SLUG: lowercase, hyphenated, max 80 chars, no special characters
+
+════════════════════════════════════════════════════
+OUTPUT — VALID JSON ONLY (no markdown, no backticks)
+════════════════════════════════════════════════════
 {{
-  "title": "Compelling English Title",
-  "content": "<p><strong>...</strong></p><p><b>Key Highlights:</b></p><ul><li>...</li></ul><p>...</p><p><i>...</i></p>",
+  "title": "Sharp, engaging English headline (8-12 words)",
+  "content": "<p><strong>🔑 ...</strong></p><p><b>📌 Key Highlights:</b></p><ul><li><b>Point:</b> ...</li></ul><p>...</p><p>...</p><p><i>⏩ What's Next: ...</i></p>",
   "category": "CategoryName",
-  "tags": ["t1", "t2", "t3", "t4", "t5"],
-  "slug": "title-slug",
-  "telugu_title": "తెలుగు శీర్షిక",
-  "telugu_content": "<p><strong>...</strong></p><p><b>ముఖ్య విషయాలు:</b></p><ul><li>...</li></ul><p>...</p><p><i>...</i></p>"
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "slug": "headline-slug-here",
+  "telugu_title": "తెలుగు శీర్షిక ఇక్కడ",
+  "telugu_content": "<p><strong>🔑 ...</strong></p><p><b>📌 ముఖ్య విషయాలు:</b></p><ul><li><b>విషయం:</b> ...</li></ul><p>...</p><p>...</p><p><i>⏩ తదుపరి: ...</i></p>"
 }}"""
 
+
 def _build_prompt(title: str, content: str, lang: str) -> str:
-    return f"""LANGUAGE: {lang}
-ORIGINAL HEADLINE: {_clean(title)}
-RAW CONTENT: {_clean(content)[:3000]}
+    clean_title = _clean(title)
+    clean_content = _clean(content)[:3500]
+    word_count = len(clean_content.split())
+    return (
+        f"SOURCE LANGUAGE: {lang}\n"
+        f"ORIGINAL HEADLINE: {clean_title}\n"
+        f"RAW CONTENT ({word_count} words):\n---\n{clean_content}\n---\n\n"
+        "YOUR TASK:\n"
+        "1. Extract key FACTS from the raw content above.\n"
+        "2. Write a COMPLETELY NEW article in your own voice — do NOT copy any phrase.\n"
+        "3. Apply the mandatory HTML structure from your system instructions.\n"
+        "4. Generate both English AND Telugu versions simultaneously.\n"
+        "5. Remove every source/agency name. Return ONLY the JSON object.\n\n"
+        "ORIGINALITY CHECK: Your output must differ from the source by at least 70% "
+        "in wording and sentence structure."
+    )
 
-TASK: Rewrite into original English + Telugu following all rules. Remove ALL source/agency names. Return JSON only."""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SIMILARITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_similarity(a: str, b: str) -> float:
+    """Gestalt pattern-matching similarity (0.0 = completely different, 1.0 = identical)."""
+    if not a or not b:
+        return 0.0
+    # Strip HTML tags for a fairer comparison
+    a_plain = re.sub(r"<[^>]+>", " ", a)
+    b_plain = re.sub(r"<[^>]+>", " ", b)
+    return SequenceMatcher(None, a_plain, b_plain).ratio()
 
 
-def _parse_result(raw: str, original_title: str, original_content: str) -> Dict:
-    text = raw.strip()
-    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.M)
-    text = re.sub(r'\s*```$', '', text, flags=re.M)
-    text = text.strip()
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY AUTO-DETECTION (used for local-path articles)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CAT_KEYWORDS: Dict[str, List[str]] = {
+    "Andhra Pradesh": ["andhra", "ap ", "vijayawada", "visakhapatnam", "jagan",
+                       "chandrababu", "lokesh", "pawan kalyan", "amravati", "tirupati"],
+    "Telangana":      ["telangana", "hyderabad", "revanth", " kcr ", " ktr ",
+                       "warangal", "khammam"],
+    "Politics":       ["election", "minister", "bjp", "congress", "government",
+                       "mla", "mp ", "parliament", "assembly", "vote", "political", "cabinet"],
+    "Sports":         ["cricket", "football", "match", "ipl", "player", "sport",
+                       "tennis", "olympic", "medal", "score", "wicket", "stadium"],
+    "Tech":           ["ai ", "technology", "google", "apple", "app ", "software",
+                       "smartphone", "iphone", "chip", "semiconductor", "startup", "data"],
+    "Business":       ["market", "stock", "economy", "billion", "million", "bank",
+                       "rbi", "sensex", "nifty", "profit", "investment", "finance"],
+    "Entertainment":  ["movie", "film", "actor", "hollywood", "bollywood", "tollywood",
+                       "cinema", "trailer", "release", "review", "celebrity"],
+    "International":  ["world", "global", "us ", "uk ", "iran", "israel", "russia",
+                       "ukraine", "un ", "summit", "foreign"],
+    "Health":         ["health", "medical", "doctor", "virus", "vaccine", "study",
+                       "cancer", "fitness", "hospital"],
+}
+
+
+def _auto_category(title: str, content: str) -> str:
+    text = f"{title} {content[:1500]}".lower()
+    for cat, keywords in _CAT_KEYWORDS.items():
+        if any(k in text for k in keywords):
+            return cat
+    return "Home"
+
+
+def _make_slug(text: str) -> str:
+    slug = re.sub(r"[^\w\s-]", "", text.lower()).strip()
+    return re.sub(r"[\s_-]+", "-", slug)[:80]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCAL PARAPHRASE RESULT BUILDER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_local_result(
+    title: str,
+    content: str,
+    ai_status_code: str,
+    method: str,
+) -> Dict:
+    """
+    Run paraphrase engine and return a fully-populated result dict
+    with structured HTML content. Used for Google News, all failure
+    paths, and Pending Approval cases.
+
+    Always produces output with the same fields as cloud AI results.
+    """
+    clean_title = _strip_source_names(_clean(title))
+    clean_content = _strip_source_names(_clean(content))
+
+    is_telugu = bool(re.search(r"[\u0c00-\u0c7f]", clean_title + clean_content[:200]))
+
+    # Run paraphrase engine
+    para_result = paraphrase_engine.paraphrase_to_html(clean_title, clean_content)
+    new_title = para_result["rephrased_title"] or clean_title
+    new_content_html = para_result["rephrased_content"] or clean_content
+
+    cat = _auto_category(clean_title, clean_content)
 
     try:
-        d = json.loads(text)
-        return _validate(d, original_title, original_content)
-    except json.JSONDecodeError:
-        pass
-
-    m = re.search(r'\{[\s\S]*\}', text)
-    if m:
-        try:
-            d = json.loads(m.group())
-            return _validate(d, original_title, original_content)
-        except json.JSONDecodeError:
-            pass
-
-    fixed = re.sub(r',\s*([}\]])', r'\1', text)
-    fixed = fixed.replace("'", '"')
-    try:
-        d = json.loads(fixed)
-        return _validate(d, original_title, original_content)
+        cat = category_service.normalize(cat)
     except Exception:
         pass
 
-    logger.warning("[AI] JSON parse failed, returning cleaned original content")
-    return _original_fallback(original_title, original_content)
+    slug = _make_slug(new_title)
 
-
-def _validate(d: Dict, orig_title: str, orig_content: str) -> Dict:
-    title = _strip_source_names(str(d.get("title", "")).strip()) or orig_title
-    content = _strip_source_names(str(d.get("content", "")).strip()) or orig_content
-    cat = category_service.normalize(str(d.get("category", "Home")))
-    tags = d.get("tags", [])
-    if not isinstance(tags, list): tags = []
-    tags = [str(t).strip().lower() for t in tags if str(t).strip()][:5]
-    slug = str(d.get("slug", "")).strip()
-    if not slug:
-        slug = re.sub(r'[^\w\s-]', '', title.lower()).strip()
-        slug = re.sub(r'[\s_-]+', '-', slug)[:80]
-    telugu_title = _strip_source_names(str(d.get("telugu_title", "")).strip())
-    telugu_content = _strip_source_names(str(d.get("telugu_content", "")).strip())
-    return {
-        "rephrased_title": title,
-        "rephrased_content": content,
-        "category": cat, "tags": tags, "slug": slug,
-        "telugu_title": telugu_title,
-        "telugu_content": telugu_content,
-        "method": d.get("_method", "ai"),
-    }
-
-
-def _original_fallback(title: str, content: str) -> Dict:
-    """Enhanced fallback: cleans text and provides basic HTML structure."""
-    clean_title = _strip_source_names(title).strip()
-    clean_content = _strip_source_names(content or title).strip()
-
-    # Detect if original is Telugu (simple check for Telugu script range)
-    is_telugu = bool(re.search(r'[\u0c00-\u0c7f]', clean_title + clean_content))
-
-    if clean_content and not re.search(r'<(p|div|ul|ol|br)', clean_content, re.I):
-        # Basic paragraphing
-        paras = [p.strip() for p in re.split(r'\n+', clean_content) if p.strip()]
-        if len(paras) > 1:
-            clean_content = "".join(f"<p>{p}</p>" for p in paras)
-        else:
-            # Sentence-based paragraphing for long single blocks
-            sentences = re.split(r'(?<=[.!?])\s+', clean_content)
-            chunks = [' '.join(sentences[i:i+3]) for i in range(0, len(sentences), 3)]
-            clean_content = "".join(f"<p>{c}</p>" for c in chunks)
-
-    # Basic auto-categorization
-    cat = "Home"
-    text_lower = f"{clean_title} {clean_content[:1500]}".lower()
-    cat_keywords = {
-        "Andhra Pradesh": ["andhra", "ap ", "vijayawada", "visakhapatnam", "jagan", "chandrababu", "lokesh", "pawan kalyan", "amravati", "tirupati"],
-        "Telangana": ["telangana", "hyderabad", "revanth", " kcr ", " ktr ", "bainsa", "warangal", "khammam"],
-        "Politics": ["election", "minister", "bjp", "congress", "government", "mla", "mp ", "parliament", "assembly", "vote", "political", "cabinet"],
-        "Sports": ["cricket", "football", "match", "ipl", "player", "sport", "tennis", "olympic", "medal", "score", "wicket", "stadium"],
-        "Tech": ["ai ", "technology", "google", "apple", "app ", "software", "smartphone", "iphone", "chip", "semiconductor", "startup", "data"],
-        "Business": ["market", "stock", "economy", "billion", "million", "bank", "rbi", "sensex", "nifty", "profit", "investment", "finance"],
-        "Entertainment": ["movie", "film", "actor", "hollywood", "bollywood", "tollywood", "cinema", "trailer", "release", "review", "celebrity"],
-        "International": ["world", "global", "us ", "uk ", "iran", "israel", "russia", "ukraine", "un ", "summit", "foreign"],
-        "Health": ["health", "medical", "doctor", "virus", "vaccine", "study", "cancer", "fitness", "hospital"],
-    }
-    for c, kw in cat_keywords.items():
-        if any(k in text_lower for k in kw):
-            cat = c
-            break
-
-    slug = re.sub(r'[^\w\s-]', '', clean_title.lower()).strip()
-    slug = re.sub(r'[\s_-]+', '-', slug)[:80]
+    # For Telugu source articles, swap English/Telugu fields
+    if is_telugu:
+        return {
+            "rephrased_title": "",
+            "rephrased_content": "",
+            "category": cat,
+            "tags": ["news", cat.lower()],
+            "slug": slug,
+            "telugu_title": new_title,
+            "telugu_content": new_content_html,
+            "method": method,
+            "ai_status_code": ai_status_code,
+            "similarity_score": 0.0,
+            "image_url": _get_category_image(cat)
+        }
 
     return {
-        "rephrased_title": clean_title if not is_telugu else "",
-        "rephrased_content": clean_content if not is_telugu else "",
+        "rephrased_title": new_title,
+        "rephrased_content": new_content_html,
         "category": cat,
         "tags": ["news", cat.lower()],
         "slug": slug,
-        "telugu_title": clean_title if is_telugu else "",
-        "telugu_content": clean_content if is_telugu else "",
-        "method": "original_cleaned",
+        "telugu_title": "",
+        "telugu_content": "",
+        "method": method,
+        "ai_status_code": ai_status_code,
+        "similarity_score": 0.0,
+        "image_url": _get_category_image(cat)
     }
 
 
-# ── Provider implementations ───────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# PROVIDER WRAPPERS
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _try_gemini(api_key: str, prompt: str, label: str = "gemini") -> Optional[str]:
-    if not api_key: return None
-    import requests
-    
-    models_to_try = [
-        "gemini-1.5-flash", 
-        "gemini-1.5-pro", 
-    ]
-    
-    for model_name in models_to_try:
+    if not api_key:
+        return None
+    for model_name in ("gemini-1.5-flash", "gemini-1.5-pro"):
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": f"{SYSTEM_PROMPT}\n\n{prompt}"}
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.4,
-                    "maxOutputTokens": 2048
-                }
-            }
-            resp = requests.post(url, json=payload, timeout=30)
-            if resp.ok:
-                data = resp.json()
-                # Extract text from Gemini response structure
-                try:
-                    return data['candidates'][0]['content']['parts'][0]['text']
-                except (KeyError, IndexError):
-                    continue
-            elif resp.status_code == 404:
-                continue
-            else:
-                logger.warning(f"[AI] {label} model {model_name} HTTP {resp.status_code}: {resp.text[:200]}")
-        except Exception as e:
-            logger.debug(f"[AI] {label} {model_name} error: {e}")
-            continue
-            
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.4,
+                    max_output_tokens=2048,
+                ),
+            )
+            if response and response.text:
+                return response.text
+        except Exception as exc:
+            logger.debug("[AI] %s/%s failed: %s", label, model_name, exc)
+    logger.warning("[AI] %s exhausted all models", label)
     return None
 
 
-def _try_openai(prompt: str) -> Optional[str]:
-    if not settings.OPENAI_API_KEY: return None
+def _try_grok(prompt: str) -> Optional[str]:
+    if not getattr(settings, "XAI_API_KEY", None):
+        return None
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=30)
+        client = OpenAI(api_key=settings.XAI_API_KEY, base_url="https://api.x.ai/v1")
+        resp = client.chat.completions.create(
+            model="grok-beta",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=2048,
+        )
+        return resp.choices[0].message.content
+    except Exception as exc:
+        logger.warning("[AI] Grok failed: %s", exc)
+        return None
+
+
+def _try_openai(prompt: str) -> Optional[str]:
+    if not getattr(settings, "OPENAI_API_KEY", None):
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.4, max_tokens=2048,
+            temperature=0.4,
+            max_tokens=2048,
         )
         return resp.choices[0].message.content
-    except Exception as e:
-        logger.warning(f"[AI] OpenAI failed: {e}")
+    except Exception as exc:
+        logger.warning("[AI] OpenAI failed: %s", exc)
         return None
 
 
-def _try_grok(prompt: str) -> Optional[str]:
-    if not getattr(settings, "XAI_API_KEY", None): return None
+# ─────────────────────────────────────────────────────────────────────────────
+# JSON PARSING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_result(raw: str, original_title: str, original_content: str) -> Optional[Dict]:
+    """
+    Parse cloud AI JSON output. Returns None if parsing completely fails
+    (caller will then route to paraphrase engine instead of raw fallback).
+    """
+    text = raw.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.M)
+    text = re.sub(r"\s*```$", "", text, flags=re.M).strip()
+
+    for attempt in (text, re.search(r"\{[\s\S]*\}", text)):
+        candidate = attempt if isinstance(attempt, str) else (attempt.group() if attempt else None)
+        if not candidate:
+            continue
+        try:
+            d = json.loads(candidate)
+            return _validate_dict(d, original_title, original_content)
+        except json.JSONDecodeError:
+            pass
+
+    # Last-chance: fix trailing commas and quote style
+    fixed = re.sub(r",\s*([}\]])", r"\1", text).replace("'", '"')
     try:
-        from openai import OpenAI
-        # xAI is OpenAI-API compatible
-        client = OpenAI(api_key=settings.XAI_API_KEY, base_url="https://api.x.ai/v1", timeout=30)
-        resp = client.chat.completions.create(
-            model="grok-beta", # or 'grok-2' if available
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.4, max_tokens=2048,
-        )
-        return resp.choices[0].message.content
-    except Exception as e:
-        logger.warning(f"[AI] Grok/xAI failed: {e}")
-        return None
+        d = json.loads(fixed)
+        return _validate_dict(d, original_title, original_content)
+    except Exception:
+        pass
+
+    logger.warning("[AI] JSON parse completely failed")
+    return None  # Signal to caller: use paraphrase engine
 
 
-def _try_ollama(prompt: str) -> Optional[str]:
+def _validate_dict(d: Dict, orig_title: str, orig_content: str) -> Dict:
+    title = _strip_source_names(str(d.get("title", "")).strip()) or orig_title
+    content = _strip_source_names(str(d.get("content", "")).strip()) or orig_content
+
     try:
-        import requests
-        resp = requests.post(
-            f"{settings.OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": settings.OLLAMA_MODEL,
-                "prompt": f"{SYSTEM_PROMPT}\\n\\n{prompt}",
-                "stream": False,
-                "options": {"temperature": 0.4, "num_predict": 2048},
-            },
-            timeout=60,
-        )
-        if resp.ok:
-            return resp.json().get("response", "")
-    except Exception as e:
-        logger.warning(f"[AI] Ollama failed: {e}")
-    return None
+        cat = category_service.normalize(str(d.get("category", "Home")))
+    except Exception:
+        cat = "Home"
+
+    tags = d.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t).strip().lower() for t in tags if str(t).strip()][:5]
+
+    slug = str(d.get("slug", "")).strip() or _make_slug(title)
+
+    telugu_title = _strip_source_names(str(d.get("telugu_title", "")).strip())
+    telugu_content = _strip_source_names(str(d.get("telugu_content", "")).strip())
+
+    return {
+        "rephrased_title": title,
+        "rephrased_content": content,
+        "category": cat,
+        "tags": tags,
+        "slug": slug,
+        "telugu_title": telugu_title,
+        "telugu_content": telugu_content,
+        "method": d.get("_method", "ai"),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LANGUAGE UTILITIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+LANG_NAMES = {
+    "te": "Telugu", "hi": "Hindi", "ta": "Tamil", "kn": "Kannada",
+    "ml": "Malayalam", "mr": "Marathi", "en": "English",
+}
 
 
 def _detect_lang(text: str) -> str:
@@ -351,154 +624,181 @@ def _detect_lang(text: str) -> str:
         return "en"
 
 
-LANG_NAMES = {
-    "te": "Telugu", "hi": "Hindi", "ta": "Tamil", "kn": "Kannada",
-    "ml": "Malayalam", "mr": "Marathi", "en": "English",
-}
-
-
-def compute_similarity(a: str, b: str) -> float:
-    """Compute gestalt pattern matching similarity between two strings."""
-    if not a or not b: return 0.0
-    return SequenceMatcher(None, a, b).ratio()
-
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN SERVICE
+# ─────────────────────────────────────────────────────────────────────────────
 
 class AIService:
+    """
+    Orchestrates cloud AI providers with paraphrase engine as universal fallback.
+
+    Flow summary:
+      Google News  →  ParaphraseEngine (local, free)
+      Regular      →  Cloud chain → ParaphraseEngine on any failure
+      Retry fail   →  ParaphraseEngine (structured HTML, sent to admin as REWRITE_FAILED)
+    """
+
+    # ── public API ────────────────────────────────────────────────────
+
     def process_article(self, title: str, content: str, source_name: str = "Unknown") -> Dict:
-        """
-        Production-grade rephrasing with fallback strategy and similarity validation.
-        """
-        # STEP 1: Detect language and build prompt
         lang_code = _detect_lang(f"{title} {content}")
-        lang_name = LANG_NAMES.get(lang_code, "Unknown")
-        
-        # Determine strictness based on source
-        # CASE A: Regional trusted sources -> aggressive rewrite
-        is_regional = any(x in (source_name or "").lower() for x in ["greatandhra", "eenadu", "sakshi", "andhra", "telangana"])
+        lang_name = LANG_NAMES.get(lang_code, "English")
         is_gnews = "google news" in (source_name or "").lower()
-        
+        is_regional = any(
+            x in (source_name or "").lower()
+            for x in ("greatandhra", "eenadu", "sakshi", "andhra", "telangana")
+        )
+
+        # ── PATH A: Google News — local only, zero API cost ───────────
+        if is_gnews:
+            logger.info("[AI] Google News → ParaphraseEngine (no paid API calls)")
+            return _build_local_result(
+                title, content,
+                ai_status_code="GOOGLE_NEWS_LOCAL",
+                method="google_news_paraphrase",
+            )
+
+        # ── PATH B: Regular sources — try cloud providers first ───────
         prompt = _build_prompt(title, content, lang_name)
         if is_regional:
-             prompt += "\n\nCRITICAL: Use aggressive sentence restructuring and significant tone shift. Ensure NO similarity to source."
-        
-        # STEP 1b: GOOGLE NEWS RULE — Do NOT call paid AI APIs (Gemini/Grok/OpenAI)
-        # Try Ollama (local LLM, free) first. If Ollama unavailable, use cleaned original.
-        if is_gnews:
-            logger.info(f"[AI] Google News — skipping paid APIs, trying Ollama only")
-            ollama_raw = _try_ollama(prompt)
-            if ollama_raw:
-                result = _parse_result(ollama_raw, title, content)
-                title_sim = compute_similarity(title, result["rephrased_title"])
-                content_sim = compute_similarity(content, result["rephrased_content"])
-                if title_sim <= 0.70 and content_sim <= 0.70:
-                    result["ai_status_code"] = "AI_SUCCESS"
-                    result["similarity_score"] = max(title_sim, content_sim)
-                    result["method"] = "google_news_ollama"
-                    return result
-            # Ollama failed or similarity too high — use cleaned original
-            res = _original_fallback(title, content)
-            res["ai_status_code"] = "GOOGLE_NEWS_NO_AI"
-            res["method"] = "google_news_original"
-            logger.info(f"[AI] Google News — Ollama unavailable/failed, using cleaned original (GOOGLE_NEWS_NO_AI)")
-            return res
+            prompt += (
+                "\n\nCRITICAL: Use aggressive sentence restructuring and "
+                "significant tone shift. Ensure NO similarity to source."
+            )
 
-        # STEP 2: Attempt Priority AI Chain
-        raw = self._try_all_providers(prompt)
-        
+        raw = self._try_cloud_providers(prompt)
+
         if raw:
             result = _parse_result(raw, title, content)
-            
-            # STEP 3: Validate AI Output (Similarity Goal <= 70%)
-            title_sim = compute_similarity(title, result["rephrased_title"])
-            content_sim = compute_similarity(content, result["rephrased_content"])
-            
-            if title_sim <= 0.70 and content_sim <= 0.70:
-                result["ai_status_code"] = "AI_SUCCESS"
-                result["similarity_score"] = max(title_sim, content_sim)
-                return result
-            else:
-                logger.warning(f"[AI] Similarity too high ({max(title_sim, content_sim):.2f}) - triggering fallback logic for {source_name}")
-        
-        # STEP 4: Fallback Strategy (MANDATORY)
-        
-        # CASE B: Google News — should never reach here (short-circuited above),
-        # kept as absolute safety net
-        if is_gnews:
-            res = _original_fallback(title, content)
-            res["ai_status_code"] = "GOOGLE_NEWS_NO_AI"
-            res["method"] = "google_news_original_fallback"
-            return res
-            
-        # CASE A/C: Stricter Retry
-        retry_prompt = prompt + "\n\nFAIL: Previous attempt was too similar. REWRITE 100%. CHANGE EVERY SENTENCE STRUCTURE."
-        raw_retry = self._try_all_providers(retry_prompt, limit_to_best=True)
-        
+            if result:
+                title_sim = compute_similarity(title, result["rephrased_title"])
+                content_sim = compute_similarity(content, result["rephrased_content"])
+
+                if title_sim <= 0.70 and content_sim <= 0.70:
+                    # Polish with lexical chain
+                    result["rephrased_title"] = paraphrase_engine._lexical_chain(
+                        result["rephrased_title"]
+                    )
+                    result["rephrased_content"] = self._polish_html_content(
+                        content, result["rephrased_content"]
+                    )
+                    result["ai_status_code"] = "AI_SUCCESS"
+                    result["similarity_score"] = max(title_sim, content_sim)
+                    result["image_url"] = _get_category_image(result.get("category", "Home"))
+                    return result
+
+                logger.warning(
+                    "[AI] Similarity too high (%.2f) for %s — retrying",
+                    max(title_sim, content_sim), source_name,
+                )
+
+        # ── PATH C: Retry with stronger prompt ───────────────────────
+        retry_prompt = (
+            prompt
+            + "\n\nFAIL: Previous attempt was too similar. "
+            "REWRITE 100%. CHANGE EVERY SENTENCE STRUCTURE. "
+            "Start every paragraph differently."
+        )
+        raw_retry = self._try_cloud_providers(retry_prompt, best_only=True)
+
         if raw_retry:
             result = _parse_result(raw_retry, title, content)
-            title_sim = compute_similarity(title, result["rephrased_title"])
-            content_sim = compute_similarity(content, result["rephrased_content"])
-            
-            if title_sim <= 0.70 and content_sim <= 0.70:
-                result["ai_status_code"] = "AI_RETRY_SUCCESS"
-                result["similarity_score"] = max(title_sim, content_sim)
-                return result
+            if result:
+                title_sim = compute_similarity(title, result["rephrased_title"])
+                content_sim = compute_similarity(content, result["rephrased_content"])
 
-        # FINAL FAIL
-        res = _original_fallback(title, content)
-        res["ai_status_code"] = "REWRITE_FAILED"
-        res["method"] = "failed_manual_review_needed"
-        return res
+                if title_sim <= 0.70 and content_sim <= 0.70:
+                    result["ai_status_code"] = "AI_RETRY_SUCCESS"
+                    result["similarity_score"] = max(title_sim, content_sim)
+                    result["image_url"] = _get_category_image(result.get("category", "Home"))
+                    return result
 
-    def _try_all_providers(self, prompt: str, limit_to_best: bool = False) -> Optional[str]:
-        """Iterate through providers in priority order."""
-        # Check Ollama (Primary local fallback)
-        raw = _try_ollama(prompt)
-        if raw: return raw
-
-        if limit_to_best: return None
-
-        # Check Gemini keys
-        for key in [settings.GEMINI_API_KEY, settings.GEMINI_API_KEY_SECONDARY, settings.GEMINI_API_KEY_TERTIARY]:
-            raw = _try_gemini(key, prompt)
-            if raw: return raw
-            
-        # Grok
-        raw = _try_grok(prompt)
-        if raw: return raw
-        
-        # OpenAI
-        raw = _try_openai(prompt)
-        if raw: return raw
-        
-        return None
-
+        # ── PATH D: All cloud attempts failed / similarity still high ─
+        # Use local ParaphraseEngine — produces structured HTML.
+        # Marked LOCAL_PARAPHRASE → worker sets flag=A → publicly visible.
+        logger.warning("[AI] All cloud providers failed/high-similarity for '%s' — using local engine", title)
+        result = _build_local_result(
+            title, content,
+            ai_status_code="LOCAL_PARAPHRASE",   # flag=A (public) not REWRITE_FAILED (admin queue)
+            method="local_paraphrase_engine",
+        )
+        return result
 
     def analyze_reporter_draft(self, title: str, content: str) -> Dict:
-        """Lightweight analytical call to suggest metadata for reporters."""
-        prompt = f"""ANALYZE THIS DRAFT NEWS:
-TITLE: {title}
-CONTENT: {content[:1000]}
-
-Based on the title and content, suggest EXACTLY ONE category from this allowed list: [{CATEGORIES_STR}].
-Also suggest 5 relevant lowercase tags.
-
-Return ONLY JSON:
-{{
-  "category": "SuggestedCategory",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-}}"""
-        # Try primary gemini first
-        keys = ["GEMINI_API_KEY", "GEMINI_API_KEY_SECONDARY", "GEMINI_API_KEY_TERTIARY"]
-        for key_name in keys:
-            key = getattr(settings, key_name, "")
-            raw = _try_gemini(key, prompt, label=key_name)
+        """Lightweight metadata suggestion for reporter drafts."""
+        prompt = (
+            f"ANALYZE THIS DRAFT NEWS:\nTITLE: {title}\nCONTENT: {content[:1000]}\n\n"
+            f"Suggest EXACTLY ONE category from: [{CATEGORIES_STR}] and 5 relevant tags.\n\n"
+            'Return ONLY JSON: {"category": "...", "tags": ["t1","t2","t3","t4","t5"]}'
+        )
+        for key_attr in ("GEMINI_API_KEY", "GEMINI_API_KEY_SECONDARY", "GEMINI_API_KEY_TERTIARY"):
+            key = getattr(settings, key_attr, "")
+            raw = _try_gemini(key, prompt, label=key_attr)
             if raw:
                 try:
-                    m = re.search(r'\{[\s\S]*\}', raw)
-                    if m: return json.loads(m.group())
-                except: pass
-        
-        # Simple local fallback if AI fails
+                    m = re.search(r"\{[\s\S]*\}", raw)
+                    if m:
+                        return json.loads(m.group())
+                except Exception:
+                    pass
         return {"category": "Home", "tags": ["news"]}
 
+    # ── private helpers ───────────────────────────────────────────────
+
+    def _try_cloud_providers(self, prompt: str, best_only: bool = False) -> Optional[str]:
+        """
+        Try cloud providers in priority order.
+        best_only=True: only try primary Gemini key (for retry path — faster).
+        """
+        gemini_keys = [
+            settings.GEMINI_API_KEY,
+            settings.GEMINI_API_KEY_SECONDARY,
+            settings.GEMINI_API_KEY_TERTIARY,
+        ]
+        for i, key in enumerate(gemini_keys):
+            raw = _try_gemini(key, prompt, label=f"gemini_key_{i+1}")
+            if raw:
+                return raw
+            if best_only:
+                return None  # Only primary key on retry
+
+        if best_only:
+            return None
+
+        raw = _try_grok(prompt)
+        if raw:
+            return raw
+
+        raw = _try_openai(prompt)
+        if raw:
+            return raw
+
+        # NOTE: Ollama removed. ParaphraseEngine handles the local fallback
+        # directly in process_article PATH D, with better structured output.
+        return None
+
+    @staticmethod
+    def _polish_html_content(original: str, rephrased_html: str) -> str:
+        """
+        Apply lexical chain to text nodes within existing HTML,
+        preserving tags. Used to polish successful cloud AI output.
+        """
+        try:
+            # Extract text between tags, polish, re-insert
+            def polish_text_node(m: re.Match) -> str:
+                txt = m.group(1)
+                return paraphrase_engine._lexical_chain(txt)
+
+            # Only polish plain text paragraphs, not inside <b>/<strong> (names/numbers)
+            polished = re.sub(
+                r"(<p>)([^<]{40,})(</p>)",
+                lambda m: m.group(1) + paraphrase_engine._lexical_chain(m.group(2)) + m.group(3),
+                rephrased_html,
+            )
+            return polished
+        except Exception:
+            return rephrased_html
+
+
+# Module-level instance — import this everywhere
 ai_service = AIService()

@@ -39,13 +39,8 @@ def _run_step(name, task_path, ignore_window: bool = False):
         now_ist_hour = (now_utc + timedelta(hours=5, minutes=30)).hour
         now_est_hour = (now_utc - timedelta(hours=5)).hour
 
-        # Window check: only block if not a "force" or "ignore_window" run
-        if not ignore_window and not (5 <= now_ist_hour < 21):
-            if "scrape" in name.lower() and "google" in name.lower() and (5 <= now_est_hour < 21):
-                pass
-            else:
-                logger.info(f"[SCHED] Task {name} skipped: Outside active 5AM-9PM IST window")
-                return
+        # Window check: removed to enable 24/7 automation
+        pass
 
         logger.info(f"[SCHED] Running {name}...")
         import importlib
@@ -75,27 +70,45 @@ def _run_full_pipeline():
         logger.info("[PIPELINE] Starting automated news pipeline (Window Ignored)")
         logger.info("=" * 55)
 
+        # CRITICAL STEP 0: Reset ALL stuck "processing" articles before doing anything
+        try:
+            from app.database import SyncSessionLocal
+            from sqlalchemy import update as sa_update
+            from app.models.models import NewsArticle as NA
+            _db = SyncSessionLocal()
+            stuck = _db.execute(
+                sa_update(NA)
+                .where(NA.ai_status.in_(["processing", "REWRITE_FAILED", "failed"]))
+                .values(ai_status="pending", ai_error_count=0)
+            )
+            _db.commit()
+            _db.close()
+            if stuck.rowcount:
+                logger.info(f"[PIPELINE] Reset {stuck.rowcount} stuck 'processing' → pending")
+        except Exception as e:
+            logger.warning(f"[PIPELINE] Stuck reset failed: {e}")
+
         steps = []
-        
-        # 1. AWS Sync - Run first to clear backlog immediately on startup
+
+        # Main Pipeline Steps (ordered for maximum fresh content flow)
+        steps.extend([
+            ("Scrape",           "app.tasks.celery_app.scrape_all_sources"),
+            ("AI Process",       "app.tasks.celery_app.process_ai_batch"),
+            ("AI Process #2",    "app.tasks.celery_app.process_ai_batch"),  # second pass: catches any missed
+            ("Ranking",          "app.tasks.celery_app.update_top_100_ranking"),
+            ("Category Counts",  "app.tasks.celery_app.update_category_counts"),
+        ])
+
         if settings.SCHEDULE_AWS_SYNC_ENABLED:
             steps.append(("AWS Sync", "app.tasks.celery_app.sync_to_aws"))
 
-        # 2. Main Pipeline Steps
-        steps.extend([
-            ("Scrape", "app.tasks.celery_app.scrape_all_sources"),
-            ("AI Process", "app.tasks.celery_app.process_ai_batch"),
-            ("Ranking", "app.tasks.celery_app.update_top_100_ranking"),
-            ("Category Counts", "app.tasks.celery_app.update_category_counts"),
-        ])
-        
         if settings.SCHEDULE_SOCIAL_ENABLED:
             steps.append(("Social Post", "app.tasks.celery_app.post_to_social"))
 
-        for i, (label, path) in enumerate(steps, 1):
+        for i, (label, path_str) in enumerate(steps, 1):
             logger.info(f"[PIPELINE] Step {i}/{len(steps)}: {label}")
-            _run_step(label, path, ignore_window=True)
-            time.sleep(2)
+            _run_step(label, path_str, ignore_window=True)
+            time.sleep(2)  # brief pause for DB commits to flush
 
         elapsed = round(time.time() - t0, 1)
         logger.info(f"[PIPELINE] Complete in {elapsed}s")
@@ -183,7 +196,8 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
         )
 
     _scheduler.start()
-    logger.info(f"[SCHED] Started — {len(_scheduler.get_jobs())} jobs")
+    logger.info(f"[SCHED] Started — {len(_scheduler.get_jobs())} jobs registered")
+    return _scheduler
 
 
 def stop_scheduler():

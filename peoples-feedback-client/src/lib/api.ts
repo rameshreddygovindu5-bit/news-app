@@ -40,7 +40,7 @@ export const newsApi = {
   }) => {
     const { flag, flags: explicitFlags, ...rest } = p;
     // Explicit `flags` wins → else single `flag` → else default A,Y
-    const resolvedFlags = explicitFlags || (flag ? flag : 'A,Y');
+    const resolvedFlags = explicitFlags || (flag ? flag : 'A,Y');  // Default = AI-processed only
     return get<import('@/types/news').ArticleListResponse>('/api/articles', {
       ...rest,
       flags: resolvedFlags,
@@ -48,8 +48,8 @@ export const newsApi = {
   },
 
   /** Top 500 ranked news (flag=Y) */
-  getTopNews: (limit = 500) =>
-    get<import('@/types/news').NewsArticle[]>('/api/articles/top-news', { limit }),
+  getTopNews: (limit = 200) =>
+    get<import('@/types/news').NewsArticle[]>('/api/articles/top-news', { limit }),  // Home feed: max 200
 
   /** Single article by id or slug */
   getArticle: (idOrSlug: number | string) =>
@@ -58,12 +58,24 @@ export const newsApi = {
   /** Articles by category — always published only */
   getByCategory: (cat: string, p?: { page?: number; page_size?: number }) =>
     get<import('@/types/news').CategoryArticlesResponse>(
-      `/api/articles/by-category/${encodeURIComponent(cat)}`, p),
+      `/api/articles/by-category/${encodeURIComponent(cat)}`, { page_size: 50, ...p }),  // Category: 50 per page
 
-  /** Telugu-only articles (have telugu_title set) */
-  getTeluguArticles: (p?: { page?: number; page_size?: number; keyword?: string }) =>
+  /** Telugu articles — articles with Telugu content OR from Telugu sources */
+  getTeluguArticles: (p?: { page?: number; page_size?: number; keyword?: string; date_from?: string; date_to?: string }) =>
     get<import('@/types/news').ArticleListResponse>('/api/articles', {
-      ...p, flags: 'A,Y', telugu_page: 'true',
+      ...p, flags: 'A,Y', lang: 'te',   // Strict: AI-processed only (flag A or Y)
+    }),
+
+  /** Hindi articles — original_language=hi */
+  getHindiArticles: (p?: { page?: number; page_size?: number; keyword?: string }) =>
+    get<import('@/types/news').ArticleListResponse>('/api/articles', {
+      ...p, flags: 'A,Y', lang: 'hi',
+    }),
+
+  /** English-only articles (default home/news pages) */
+  getEnglishArticles: (p?: { page?: number; page_size?: number; category?: string; keyword?: string }) =>
+    get<import('@/types/news').ArticleListResponse>('/api/articles', {
+      ...p, flags: 'A,Y', lang: 'en',
     }),
 
   /** Categories from backend DB (dynamic) */

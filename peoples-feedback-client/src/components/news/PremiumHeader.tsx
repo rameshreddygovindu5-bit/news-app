@@ -68,10 +68,10 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   }, [location]);
 
   const currentDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
-  const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }, { name: 'हिन्दी', code: 'hi' }];
+  const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }];
 
   useEffect(() => {
-    if (!location.startsWith('/telugu') && document.cookie.includes('googtrans=/en/te')) {
+    if (!location.startsWith('/telugu') && !location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
       window.location.reload();
@@ -100,7 +100,9 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery?.trim()) setLocation(`/news?search=${encodeURIComponent(searchQuery.trim())}`);
+    if (searchQuery?.trim()) {
+      setLocation(`/news?search=${encodeURIComponent(searchQuery.trim())}`);
+    }
   };
 
   const handleMobileSearchSubmit = (e: React.FormEvent) => {
@@ -139,10 +141,10 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
       <div className="tricolor-stripe" />
 
       {/* Top utility bar — hidden on mobile */}
-      <div className="nav-india text-white h-12 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+      <div className="nav-india glass-navy text-white h-12 px-4 hidden md:flex items-center justify-between text-[11px] font-medium shadow-lg relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-5"></div>
         <div className="flex items-center gap-6 relative z-10">
-          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-1.5 shadow-inner">
+          <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1.5 shadow-inner">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--pf-green)] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--pf-green)]"></span>
@@ -217,7 +219,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
       </div>
 
       {/* FIX 3: Category nav — horizontally scrollable on mobile, dropdowns on desktop */}
-      <motion.div className={`w-full z-40 transition-all duration-300 ${scrolled ? 'fixed top-0 bg-white/95 backdrop-blur-md shadow-xl border-b border-gray-100' : 'relative bg-gradient-to-r from-white via-gray-50 to-white border-b border-gray-200'}`}>
+      <motion.div className={`w-full z-40 transition-all duration-500 ${scrolled ? 'fixed top-0 glass-panel shadow-2xl border-b border-white/20' : 'relative bg-white/80 backdrop-blur-md border-b border-gray-200'}`}>
         <div className="max-w-7xl mx-auto px-2 md:px-4 flex items-center h-12">
           {/* Desktop: dropdown menus */}
           <nav className="hidden md:flex flex-1 items-center gap-1">
@@ -234,7 +236,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   <button onClick={() => isDirect ? handleCat(main.path!) : null}
                     className={`px-3 lg:px-4 text-[12px] lg:text-[13px] font-black h-12 flex items-center transition-all duration-300 whitespace-nowrap uppercase tracking-wider
                       ${(isActiveMain || hasActiveChild) ? 'nav-active-tricolor shadow-[inset_0_-1px_0_var(--pf-white)]' : 'text-zinc-600 hover:text-[var(--pf-navy)]'}
-                      ${main.isSpecial ? 'telugu !font-bold !tracking-normal !normal-case !text-[14px]' : ''}`}>
+                      ${main.isSpecial && main.path.includes('తెలుగు') ? 'telugu !font-bold !tracking-normal !normal-case !text-[14px]' : main.isSpecial ? '!font-bold !tracking-normal !normal-case !text-[14px]' : ''}`}>
                     {main.name}
                     {!isDirect && <span className="ml-1 opacity-50 group-hover/menu:rotate-180 transition-transform text-[8px]">▼</span>}
                   </button>

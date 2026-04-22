@@ -14,8 +14,8 @@ import { TrendingUp, ArrowRight, Clock, Newspaper, Gift } from "lucide-react";
 import { NewsArticle, getTitle, getSummary, getImage, categoryPlaceholder, WishItem } from "@/types/news";
 import { ShareBar } from "@/components/news/ShareMenu";
 import { PollWidget } from "@/components/news/PollWidget";
-import { newsApi } from "@/lib/api";
 import { motion } from "framer-motion";
+import { newsApi } from "@/lib/api";
 
 const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const el = e.currentTarget;
@@ -32,6 +32,12 @@ interface Props {
   hasMore?:       boolean;
   isLoadingMore?: boolean;
   selectedCategory?: string;
+  lang?:          "en" | "te";
+  linkPrefix?:    string;
+  // Numbered Pagination Props
+  onPageChange?:  (page: number) => void;
+  currentPage?:   number;
+  totalPages?:    number;
 }
 
 const timeAgo = (d?: string) => {
@@ -47,17 +53,18 @@ const timeAgo = (d?: string) => {
 };
 
 /* ── Hero Card ───────────────────────────────────────────────────────── */
-const HeroCard = ({ article }: { article: NewsArticle }) => (
-  <Link href={`/news/${article.slug || article.id}`}>
-    <div className="group cursor-pointer relative overflow-hidden bg-[var(--pf-navy)] rounded-2xl shadow-2xl transform transition-all duration-500 hover:scale-[1.015] hover:shadow-3xl">
-      <div className="aspect-[16/9] sm:aspect-[21/9] md:aspect-[2.5/1] relative news-image-wrapper">
+const HeroCard = ({ article, lang = "en", linkPrefix = "news" }: { article: NewsArticle; lang?: "en" | "te"; linkPrefix?: string }) => (
+  <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
+    <div className="group cursor-pointer relative overflow-hidden bg-[var(--pf-navy)] rounded-2xl shadow-2xl premium-card transform transition-all duration-700 hover:shadow-3xl">
+      <div className="aspect-[16/9] sm:aspect-[21/9] md:aspect-[2.5/1] relative news-image-wrapper pf-image-wrap">
         <img
           src={getImage(article)}
-          className="w-full h-full object-cover opacity-60 group-hover:opacity-70 group-hover:scale-[1.04] transition-all duration-700"
-          alt={getTitle(article)}
+          className="w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-[1.05] transition-all duration-1000"
+          alt={getTitle(article, lang)}
           onError={handleImgError}
           data-category={article.category}
         />
+          <div className="pf-watermark"><img src="/pf-logo.png" alt="PF" loading="lazy" /></div>
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
         {/* Tricolor overlay for copyright differentiation */}
         <div className="absolute inset-0 bg-gradient-to-r from-[var(--pf-saffron)]/15 via-transparent to-[var(--pf-green)]/15 opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
@@ -76,13 +83,13 @@ const HeroCard = ({ article }: { article: NewsArticle }) => (
             </span>
           </div>
           <h1
-            className="text-2xl sm:text-3xl md:text-5xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl group-hover:scale-[1.01] transition-transform duration-300"
-            style={{ fontFamily: "var(--font-headline)" }}
+            className={`text-2xl sm:text-3xl md:text-5xl font-black text-white leading-[1.1] tracking-tight mb-4 max-w-4xl group-hover:scale-[1.01] transition-transform duration-300 ${lang === 'te' ? 'telugu' : ''}`}
+            style={{ fontFamily: lang === 'te' ? 'var(--font-telugu)' : "var(--font-headline)" }}
           >
-            {getTitle(article)}
+            {getTitle(article, lang)}
           </h1>
-          <p className="text-white/80 text-sm sm:text-lg line-clamp-2 max-w-3xl mb-4 leading-relaxed">
-            {getSummary(article, 200)}
+          <p className={`text-white/80 text-sm sm:text-lg line-clamp-2 max-w-3xl mb-4 leading-relaxed ${lang === 'te' ? 'telugu' : ''}`}>
+            {getSummary(article, 200, lang)}
           </p>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-white/60 text-[11px] font-medium">
@@ -98,25 +105,20 @@ const HeroCard = ({ article }: { article: NewsArticle }) => (
 );
 
 /* ── Article Card ────────────────────────────────────────────────────── */
-const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "lg" | "md" | "sm" }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 15 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    viewport={{ once: true }}
-    whileHover={{ y: -6 }}
-    className="h-full"
-  >
-    <Link href={`/news/${article.slug || article.id}`}>
-      <div className="group cursor-pointer h-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:border-[var(--pf-saffron)]/30 transition-all duration-300">
+const ArticleCard = ({ article, size = "md", lang = "en", linkPrefix = "news" }: { article: NewsArticle; size?: "lg" | "md" | "sm"; lang?: "en" | "te"; linkPrefix?: string }) => (
+<div className="h-full animate-fade-in">
+    <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
+      <div className="group cursor-pointer h-full bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden premium-card hover:border-[var(--pf-saffron)]/30 transition-all duration-500">
         {size !== "sm" && (
-          <div className="aspect-video relative overflow-hidden news-image-wrapper">
+          <div className="aspect-video relative overflow-hidden news-image-wrapper pf-image-wrap">
             <img
               src={getImage(article)}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-600"
-              alt={getTitle(article)}
+              alt={getTitle(article, lang)}
               onError={handleImgError}
               data-category={article.category}
             />
+          <div className="pf-watermark"><img src="/pf-logo.png" alt="PF" loading="lazy" /></div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
             {article.category && (
               <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-[var(--pf-navy)] px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full shadow-sm">
@@ -139,13 +141,13 @@ const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "l
           <h3
             className={`font-black text-zinc-900 mb-3 group-hover:text-[var(--pf-saffron)] transition-colors leading-tight ${
               size === "lg" ? "text-xl" : size === "md" ? "text-lg" : "text-base"
-            }`}
-            style={{ fontFamily: "var(--font-headline)" }}
+            } ${lang === 'te' ? 'telugu' : ''}`}
+            style={{ fontFamily: lang === 'te' ? 'var(--font-telugu)' : "var(--font-headline)" }}
           >
-            {getTitle(article)}
+            {getTitle(article, lang)}
           </h3>
-          <p className={`text-zinc-500 leading-relaxed mb-4 line-clamp-3 ${size === "lg" ? "text-sm" : "text-xs"}`}>
-            {getSummary(article, 150)}
+          <p className={`text-zinc-500 leading-relaxed mb-4 line-clamp-3 ${size === "lg" ? "text-sm" : "text-xs"} ${lang === 'te' ? 'telugu' : ''}`}>
+            {getSummary(article, 150, lang)}
           </p>
           <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
             <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-400">
@@ -158,22 +160,22 @@ const ArticleCard = ({ article, size = "md" }: { article: NewsArticle; size?: "l
         </div>
       </div>
     </Link>
-  </motion.div>
+</div>
 );
 
 /* ── Ranked Item ─────────────────────────────────────────────────────── */
-const RankedItem = ({ article, rank }: { article: NewsArticle; rank: number }) => (
-  <Link href={`/news/${article.slug || article.id}`}>
+const RankedItem = ({ article, rank, lang = "en", linkPrefix = "news" }: { article: NewsArticle; rank: number; lang?: "en" | "te"; linkPrefix?: string }) => (
+  <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
     <div className="group cursor-pointer flex gap-4 py-4 border-b border-gray-100 last:border-0 hover:bg-[var(--pf-saffron)]/5 transition-colors rounded-lg px-2">
       <span
         className="text-3xl font-black text-zinc-300 group-hover:text-[var(--pf-saffron)] transition-colors w-8 shrink-0 leading-none"
-        style={{ fontFamily: "var(--font-headline)" }}
+        style={{ fontFamily: lang === 'te' ? 'var(--font-telugu)' : "var(--font-headline)" }}
       >
         {rank}
       </span>
       <div className="min-w-0 flex-1">
-        <h4 className="font-bold text-zinc-900 text-sm leading-snug group-hover:text-[var(--pf-saffron)] transition-colors line-clamp-2">
-          {getTitle(article)}
+        <h4 className={`font-bold text-zinc-900 text-sm leading-snug group-hover:text-[var(--pf-saffron)] transition-colors line-clamp-2 ${lang === 'te' ? 'telugu' : ''}`}>
+          {getTitle(article, lang)}
         </h4>
         <div className="flex items-center gap-2 mt-1.5 text-[10px] text-zinc-400 font-medium">
           {article.category && (
@@ -246,7 +248,7 @@ function WishesSidebar() {
 }
 
 /* ── Main Layout ─────────────────────────────────────────────────────── */
-export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoadingMore, selectedCategory }: Props) {
+export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoadingMore, selectedCategory, lang = "en", linkPrefix = "news", onPageChange, currentPage, totalPages }: Props) {
   const { featured, secondary, catGroups, allSorted } = useMemo(() => {
     if (!articles?.length) return { featured: null, secondary: [], catGroups: {} as Record<string, NewsArticle[]>, allSorted: [] };
     // Sort by recency first (newest on top), rank_score as tiebreaker
@@ -254,7 +256,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
       (a, b) => new Date(b.published_at || b.created_at || 0).getTime() - new Date(a.published_at || a.created_at || 0).getTime()
         || (b.rank_score || 0) - (a.rank_score || 0)
     );
-    const safe = sorted.filter(a => a.original_title);
+    const safe = sorted.filter(a => a.original_title || a.telugu_title);
     const groups: Record<string, NewsArticle[]> = {};
     // FIX: Show ALL categories, not just first 5
     safe.slice(5).forEach(a => {
@@ -265,21 +267,41 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
     return { featured: safe[0], secondary: safe.slice(1, 5), catGroups: groups, allSorted: safe };
   }, [articles]);
 
+  // ── Loading state: show skeleton until first data arrives ──────────
   if (isLoading && !articles?.length) return <SkeletonLayout />;
 
-  // If no articles, show empty state
-  if (!articles || articles.length === 0) {
+  // ── Truly empty (loading done, zero articles) ────────────────────
+  if (!isLoading && (!articles || articles.length === 0)) {
+    const isCategory = selectedCategory && selectedCategory !== "Home" && selectedCategory !== "All";
     return (
-      <div className="max-w-7xl mx-auto px-4 pb-16">
-        <div className="text-center py-20">
-          <div className="tricolor-stripe rounded-full w-24 mx-auto mb-6" />
-          <h2 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-zinc-900 mb-4" style={{ fontFamily: 'var(--font-headline)' }}>
-            No Articles Available
-          </h2>
-          <p className="text-zinc-600 max-w-md mx-auto">
-            We're working on bringing you the latest news. Please check back later.
-          </p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center py-20 px-4">
+        <div className="w-24 h-24 mb-6 rounded-full bg-[var(--pf-navy)]/5 flex items-center justify-center">
+          <svg className="w-12 h-12 text-[var(--pf-navy)]/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+          </svg>
         </div>
+        <h3 className={`text-xl font-black text-gray-800 mb-3 ${lang === 'te' ? 'telugu' : ''}`}>
+          {isCategory ? (lang === 'te' ? `ప్రస్తుతం ${selectedCategory} వార్తలు లేవు` : `No ${selectedCategory} articles yet`) : (lang === 'te' ? "వార్తలు లోడ్ అవుతున్నాయి…" : "Pipeline starting up…")}
+        </h3>
+        <p className={`text-gray-500 text-sm max-w-xs leading-relaxed mb-6 ${lang === 'te' ? 'telugu' : ''}`}>
+          {isCategory
+            ? (lang === 'te' ? "ఈ విభాగంలో వార్తలు సిద్ధమవుతున్నాయి. త్వరలో ఇక్కడ కనిపిస్తాయి." : "Articles for this category are being processed. They will appear here automatically.")
+            : (lang === 'te' ? "మా AI వార్తలను సేకరిస్తోంది. పేజీ ప్రతి 10 సెకన్లకు రీఫ్రెష్ అవుతుంది." : "The backend is scraping and rephrasing articles. This page refreshes every 10 seconds automatically.")}
+        </p>
+        {/* Progress indicator */}
+        <div className="flex items-center gap-3 bg-[var(--pf-navy)]/5 rounded-2xl px-6 py-3 mb-4">
+          <div className="flex gap-1.5">
+            {[0,150,300].map(d => (
+              <div key={d} className="w-2 h-2 bg-[var(--pf-saffron)] rounded-full animate-bounce"
+                style={{animationDelay:`${d}ms`}} />
+            ))}
+          </div>
+          <span className={`text-xs font-semibold text-[var(--pf-navy)]/60 tracking-wide ${lang === 'te' ? 'telugu' : ''}`}>
+            {isCategory ? (lang === 'te' ? "తనిఖీ చేస్తున్నాము…" : "Checking for articles…") : (lang === 'te' ? "సేకరణ → AI → ర్యాంకింగ్ జరుగుతోంది" : "Scraping → AI → Ranking in progress")}
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-400 uppercase tracking-widest">Auto-refreshing every 10s</p>
       </div>
     );
   }
@@ -317,9 +339,9 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                       {new Date(a.published_at!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </td>
                     <td className="px-6 py-4">
-                      <Link href={`/news/${a.slug || a.id}`}>
-                        <span className="font-black text-zinc-800 group-hover:text-[var(--pf-saffron)] transition-colors cursor-pointer">
-                          {getTitle(a)}
+                      <Link href={`/${linkPrefix}/${a.slug || a.id}`}>
+                        <span className={`font-black text-zinc-800 group-hover:text-[var(--pf-saffron)] transition-colors cursor-pointer ${lang === 'te' ? 'telugu' : ''}`}>
+                          {getTitle(a, lang)}
                         </span>
                       </Link>
                     </td>
@@ -335,7 +357,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Link href={`/news/${a.slug || a.id}`}>
+                      <Link href={`/${linkPrefix}/${a.slug || a.id}`}>
                         <button className="px-4 py-1.5 border border-[var(--pf-navy)] text-[var(--pf-navy)] text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all">
                           View Results
                         </button>
@@ -385,14 +407,14 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
           </span>
-          Breaking
+          {lang === 'te' ? 'బ్రేకింగ్' : 'Breaking'}
         </div>
         <div className="flex-1 overflow-hidden">
           <div className="flex animate-marquee whitespace-nowrap items-center">
             {[...tickerItems, ...tickerItems].map((a, i) => (
-              <Link key={`${a.id}-${i}`} href={`/news/${a.slug || a.id}`}>
-                <span className="text-[12px] font-medium px-5 hover:text-[var(--pf-saffron)] cursor-pointer border-r border-white/20 transition-colors">
-                  {getTitle(a)}
+              <Link key={`${a.id}-${i}`} href={`/${linkPrefix}/${a.slug || a.id}`}>
+                <span className={`text-[12px] font-medium px-5 hover:text-[var(--pf-saffron)] cursor-pointer border-r border-white/20 transition-colors ${lang === 'te' ? 'telugu' : ''}`}>
+                  {getTitle(a, lang)}
                 </span>
               </Link>
             ))}
@@ -402,7 +424,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
       
       {/* ── Hero ── */}
       <section className="mb-10">
-        <HeroCard article={featured} />
+        <HeroCard article={featured} lang={lang} linkPrefix={linkPrefix} />
       </section>
 
       {/* ── Secondary grid ── */}
@@ -416,7 +438,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
               viewport={{ once: true }}
               transition={{ delay: i * 0.08 }}
             >
-              <ArticleCard article={a} size="md" />
+              <ArticleCard article={a} size="md" lang={lang} linkPrefix={linkPrefix} />
             </motion.div>
           ))}
         </section>
@@ -439,28 +461,28 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                 <div className="flex items-center gap-3">
                   <div className="w-1 h-8 bg-[var(--pf-saffron)] rounded-full" />
                   <h2
-                    className="text-2xl font-black uppercase tracking-tight text-[var(--pf-navy)]"
-                    style={{ fontFamily: "var(--font-headline)" }}
+                    className={`text-2xl font-black uppercase tracking-tight text-[var(--pf-navy)] ${lang === 'te' ? 'telugu' : ''}`}
+                    style={{ fontFamily: lang === 'te' ? 'var(--font-telugu)' : "var(--font-headline)" }}
                   >
-                    {cat === "Home" ? "Fresh News" : cat}
+                    {cat === "Home" ? (lang === 'te' ? "తాజా వార్తలు" : "Headlines") : cat}
                   </h2>
                 </div>
                 <Link
-                  href={cat === "Home" || cat === "Latest Updates" ? "/news" : `/news?category=${cat}`}
-                  className="flex items-center gap-1.5 bg-[var(--pf-navy)] text-white px-5 py-2 rounded-lg font-bold text-[11px] uppercase tracking-wider hover:bg-[var(--pf-saffron)] transition-colors"
+                  href={cat === "Home" || cat === "Latest Updates" ? `/${linkPrefix}` : `/${linkPrefix}?category=${cat}`}
+                  className="flex items-center gap-2 bg-[var(--pf-navy)]/5 text-[var(--pf-navy)] px-5 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-[var(--pf-navy)] hover:text-white transition-all border border-[var(--pf-navy)]/10"
                 >
-                  See All <ArrowRight className="w-3.5 h-3.5" />
+                  {lang === 'te' ? 'అన్నీ చూడండి' : 'Full Feed'} <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {items[0] && (
                   <div className="md:col-span-1">
-                    <ArticleCard article={items[0]} size="lg" />
+                    <ArticleCard article={items[0]} size="lg" lang={lang} linkPrefix={linkPrefix} />
                   </div>
                 )}
                 <div className="md:col-span-2 divide-y divide-gray-100">
                   {items.slice(1, 5).map((a, i) => (
-                    <RankedItem key={a.id} article={a} rank={i + 1} />
+                    <RankedItem key={a.id} article={a} rank={i + 1} lang={lang} linkPrefix={linkPrefix} />
                   ))}
                 </div>
               </div>
@@ -475,24 +497,24 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
           <div className="sticky top-20 space-y-6">
             {/* Most Read */}
             <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-              <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--pf-navy)] mb-4 pb-3 border-b-2 border-[var(--pf-saffron)]">
-                <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" /> Most Read
+              <h3 className={`flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[var(--pf-navy)] mb-4 pb-3 border-b-2 border-[var(--pf-saffron)] ${lang === 'te' ? 'telugu' : ''}`}>
+                <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" /> {lang === 'te' ? 'ట్రెండింగ్ వార్తలు' : 'Most Read'}
               </h3>
               {allSorted.slice(0, 7).map((a, i) => (
-                <RankedItem key={a.id} article={a} rank={i + 1} />
+                <RankedItem key={a.id} article={a} rank={i + 1} lang={lang} linkPrefix={linkPrefix} />
               ))}
             </div>
 
             {/* Newsletter */}
             <div className="bg-[var(--pf-navy)] rounded-xl p-5 text-white">
-              <h4 className="font-black uppercase tracking-wider text-xs mb-2">Daily Brief</h4>
-              <p className="text-sm mb-4 text-white/80">Top stories delivered every morning.</p>
+              <h4 className={`font-black uppercase tracking-wider text-xs mb-2 ${lang === 'te' ? 'telugu' : ''}`}>{lang === 'te' ? 'వార్తా లేఖ' : 'Daily Brief'}</h4>
+              <p className={`text-sm mb-4 text-white/80 ${lang === 'te' ? 'telugu' : ''}`}>{lang === 'te' ? 'రోజూ ఉదయం వార్తలు పొందండి.' : 'Top stories delivered every morning.'}</p>
               <input
                 className="w-full bg-white/10 border border-white/20 px-3 py-2 text-xs rounded-lg mb-2 placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[var(--pf-saffron)]/50 text-white"
                 placeholder="your@email.com"
               />
-              <button className="w-full bg-[var(--pf-saffron)] text-white py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg hover:bg-[var(--pf-orange)] transition-colors">
-                Subscribe
+              <button className={`w-full bg-[var(--pf-saffron)] text-white py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg hover:bg-[var(--pf-orange)] transition-colors ${lang === 'te' ? 'telugu' : ''}`}>
+                {lang === 'te' ? 'సబ్స్క్రైబ్' : 'Subscribe'}
               </button>
             </div>
 
@@ -503,8 +525,50 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
         </aside>
       </div>
 
-      {/* FIX 2: Load More — moved OUTSIDE grid so it's always visible */}
-      {hasMore && onLoadMore && (
+      {/* FIX 2: Load More OR Numbered Pagination */}
+      {onPageChange && totalPages && totalPages > 1 ? (
+        <div className="flex justify-center items-center gap-2 pt-10 pb-4 flex-wrap">
+          <button
+            onClick={() => onPageChange(Math.max(1, (currentPage || 1) - 1))}
+            disabled={currentPage === 1}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-xs font-bold uppercase tracking-wider hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            {lang === 'te' ? 'మునుపటి' : 'Prev'}
+          </button>
+          
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+             // Simple window of 5 pages around current
+             let p = i + 1;
+             if (totalPages > 5) {
+                if ((currentPage || 1) > 3) p = (currentPage || 1) - 3 + i;
+                if (p + (5-i) > totalPages) p = totalPages - 4 + i;
+             }
+             if (p < 1 || p > totalPages) return null;
+             
+             return (
+               <button
+                 key={p}
+                 onClick={() => onPageChange(p)}
+                 className={`w-10 h-10 rounded-lg text-xs font-bold transition-all ${
+                   currentPage === p 
+                   ? "bg-[var(--pf-navy)] text-white shadow-lg scale-110" 
+                   : "bg-white border border-gray-100 text-zinc-400 hover:border-[var(--pf-saffron)] hover:text-[var(--pf-saffron)]"
+                 }`}
+               >
+                 {p}
+               </button>
+             );
+          })}
+
+          <button
+            onClick={() => onPageChange(Math.min(totalPages, (currentPage || 1) + 1))}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-xs font-bold uppercase tracking-wider hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            {lang === 'te' ? 'తదుపరి' : 'Next'}
+          </button>
+        </div>
+      ) : hasMore && onLoadMore && (
         <div className="flex justify-center pt-10 pb-4">
           <button
             type="button"
@@ -517,7 +581,7 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                 <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Loading…
               </span>
-            ) : "Load More Headlines"}
+            ) : (lang === 'te' ? "మరిన్ని వార్తలు" : "Load More Headlines")}
           </button>
         </div>
       )}

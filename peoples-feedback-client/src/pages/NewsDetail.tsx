@@ -21,7 +21,7 @@ import { BackToTop } from "@/components/news/BackToTop";
 import SEO from "@/components/shared/SEO";
 import { newsApi } from "@/lib/api";
 import type { NewsArticle, ArticleListResponse } from "@/types/news";
-import { getTitle, getContent, getImage, getSummary, categoryPlaceholder, hasTelugu, readTime } from "@/types/news";
+import { getTitle, getContent, getImage, getSummary, categoryPlaceholder, hasTelugu, readTime, sanitizeArticleHtml } from "@/types/news";
 
 const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const el = e.currentTarget;
@@ -167,7 +167,17 @@ export default function NewsDetail() {
           {/* Tricolor stripe */}
           <div className="tricolor-stripe rounded-full mb-6" />
 
-          {article.category && (
+          {'AI_SUCCESS AI_RETRY_SUCCESS'.includes(article.ai_status || '') && (
+                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200">
+                  ✅ AI Rephrased
+                </span>
+              )}
+              {article.ai_status === 'LOCAL_PARAPHRASE' && (
+                <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-200">
+                  🔄 Processed
+                </span>
+              )}
+              {article.category && (
             <Link href={`/news?category=${article.category}`}>
               <span className="inline-block bg-[var(--pf-navy)] text-white px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] mb-4 rounded-sm hover:bg-[var(--pf-saffron)] transition-colors cursor-pointer">
                 {article.category}
@@ -184,7 +194,7 @@ export default function NewsDetail() {
 
           {/* Language toggle — only if Telugu content exists */}
           {hasTE && (
-            <div className="flex items-center gap-1 mb-8 bg-zinc-100 p-1 w-fit rounded-full border border-zinc-200 shadow-sm">
+            <div className="flex items-center gap-1 mb-8 glass-panel p-1 w-fit rounded-full shadow-lg border border-white/40">
               <button
                 onClick={() => setLang('en')}
                 className={`px-5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -218,7 +228,7 @@ export default function NewsDetail() {
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" /> {minutes} min read
               </span>
-              {article.author && <span>By {article.author}</span>}
+              {/* Source attribution removed — copyright protection */}
             </div>
           </div>
         </header>
@@ -292,7 +302,7 @@ export default function NewsDetail() {
             <div className="sticky top-28 space-y-8">
 
               {/* About box */}
-              <div className="p-5 bg-zinc-50 border-t-2 border-[var(--pf-navy)]">
+              <div className="p-6 glass-panel border-t-4 border-[var(--pf-navy)] shadow-xl rounded-2xl">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-900 mb-4">
                   About this article
                 </h4>
