@@ -184,7 +184,7 @@ async def list_articles(
         count_query = count_query.where(and_(*filters))
     total = (await db.execute(count_query)).scalar() or 0
     offset = (page - 1) * page_size
-    query = query.order_by(desc(NewsArticle.published_at), desc(NewsArticle.created_at)).offset(offset).limit(page_size)
+    query = query.order_by(desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))).offset(offset).limit(page_size)
     rows = (await db.execute(query)).all()
     return NewsArticleListResponse(
         articles=[article_to_response(r[0], r[1]) for r in rows],
@@ -219,8 +219,7 @@ async def get_top_news(
         telugu_page
     ).order_by(
         desc(NewsArticle.rank_score),
-        desc(NewsArticle.published_at),
-        desc(NewsArticle.created_at)
+        desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))
     ).limit(cap)
 
     rows = (await db.execute(q_y)).all()
@@ -241,8 +240,7 @@ async def get_top_news(
             ),
             telugu_page
         ).order_by(
-            desc(NewsArticle.published_at),
-            desc(NewsArticle.created_at)
+            desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))
         ).limit(cap)
         rows = (await db.execute(q_a)).all()
 

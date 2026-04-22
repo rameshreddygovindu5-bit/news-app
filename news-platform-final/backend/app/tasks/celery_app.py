@@ -453,7 +453,8 @@ def update_top_100_ranking():
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status.in_([
                     "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
-                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI",
+                    "GOOGLE_NEWS_LOCAL", "LOCAL_PARAPHRASE"
                 ]),
                 NewsArticle.created_at>=cutoff,
                 NewsArticle.is_duplicate==False,
@@ -466,7 +467,8 @@ def update_top_100_ranking():
             candidates = db.query(NewsArticle).join(NewsSource).filter(
                 NewsArticle.ai_status.in_([
                     "completed", "AI_SUCCESS", "AI_RETRY_SUCCESS",
-                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI"
+                    "UNPROCESSED_AI_FALLBACK", "GOOGLE_NEWS_NO_AI",
+                    "GOOGLE_NEWS_LOCAL", "LOCAL_PARAPHRASE"
                 ]),
                 NewsArticle.is_duplicate==False,
             ).order_by(desc(NewsArticle.created_at)).limit(settings.TOP_NEWS_COUNT * 2).all()  # Fetch 2× then trim to TOP_NEWS_COUNT=200

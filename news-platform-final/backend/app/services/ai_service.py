@@ -455,14 +455,33 @@ def _build_local_result(
             "image_url": _get_category_image(cat)
         }
 
+    # BILINGUAL FALLBACK: If source is English, attempt translation via Ollama
+    # otherwise fallback to English content so it's at least visible.
+    te_title = new_title
+    te_content = new_content_html
+    
+    # Try local translation if Ollama is available
+    translation_prompt = f"Translate the following news title and content to Telugu. Return ONLY JSON with 'title' and 'content' fields.\nTITLE: {new_title}\nCONTENT: {new_content_html[:500]}"
+    translated_raw = _try_ollama(translation_prompt)
+    if translated_raw:
+        try:
+            # Extract JSON from Ollama response
+            m = re.search(r"\{[\s\S]*\}", translated_raw)
+            if m:
+                d = json.loads(m.group())
+                te_title = d.get("title") or te_title
+                te_content = d.get("content") or te_content
+        except Exception:
+            pass
+
     return {
         "rephrased_title": new_title,
         "rephrased_content": new_content_html,
         "category": cat,
         "tags": ["news", cat.lower()],
         "slug": slug,
-        "telugu_title": "",
-        "telugu_content": "",
+        "telugu_title": te_title,
+        "telugu_content": te_content,
         "method": method,
         "ai_status_code": ai_status_code,
         "similarity_score": 0.0,
@@ -539,6 +558,31 @@ def _try_openai(prompt: str) -> Optional[str]:
     except Exception as exc:
         logger.warning("[AI] OpenAI failed: %s", exc)
         return None
+
+
+def _try_ollama(prompt: str) -> Optional[str]:
+    """Fallback to local Ollama if running."""
+    if not getattr(settings, "OLLAMA_BASE_URL", None):
+        return None
+    try:
+        import requests
+        # Use llama3.2:1b as found in local tags
+        model = "llama3.2:1b"
+        resp = requests.post(
+            f"{settings.OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": model,
+                "prompt": f"{SYSTEM_PROMPT}\n\nUSER REQUEST: {prompt}",
+                "stream": False,
+                "options": {"temperature": 0.3}
+            },
+            timeout=30
+        )
+        if resp.status_code == 200:
+            return resp.json().get("response")
+    except Exception as exc:
+        logger.debug("[AI] Ollama failed: %s", exc)
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -773,8 +817,10 @@ class AIService:
         if raw:
             return raw
 
-        # NOTE: Ollama removed. ParaphraseEngine handles the local fallback
-        # directly in process_article PATH D, with better structured output.
+        raw = _try_ollama(prompt)
+        if raw:
+            return raw
+
         return None
 
     @staticmethod
