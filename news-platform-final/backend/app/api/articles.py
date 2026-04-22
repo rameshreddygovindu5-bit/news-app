@@ -177,8 +177,31 @@ async def list_articles(
     if not flags and not flag:
         filters.append(NewsArticle.flag.in_(["A", "Y"]))
 
-    if date_from: filters.append(NewsArticle.created_at >= date_from)
-    if date_to: filters.append(NewsArticle.created_at <= date_to)
+    if date_from:
+        try:
+            # Parse 'YYYY-MM-DD' or ISO format
+            from datetime import date
+            if 'T' in date_from:
+                dt_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+            else:
+                dt_from = datetime.combine(date.fromisoformat(date_from), datetime.min.time())
+            filters.append(NewsArticle.created_at >= dt_from)
+        except Exception as e:
+            logger.warning(f"Invalid date_from format: {date_from} - {e}")
+            filters.append(NewsArticle.created_at >= date_from)
+
+    if date_to:
+        try:
+            from datetime import date
+            if 'T' in date_to:
+                dt_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+            else:
+                dt_to = datetime.combine(date.fromisoformat(date_to), datetime.max.time())
+            filters.append(NewsArticle.created_at <= dt_to)
+        except Exception as e:
+            logger.warning(f"Invalid date_to format: {date_to} - {e}")
+            filters.append(NewsArticle.created_at <= date_to)
+
     if filters:
         query = query.where(and_(*filters))
         count_query = count_query.where(and_(*filters))
