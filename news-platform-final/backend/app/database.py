@@ -64,10 +64,11 @@ async def create_tables():
     from app.models import models as _  # noqa: F401
 
     async with async_engine.begin() as conn:
-        # Enable WAL mode for high-concurrency (FastAPI reads while Celery writes)
-        await conn.execute(text("PRAGMA journal_mode=WAL;"))
+        # Enable WAL mode for high-concurrency (SQLite only)
+        if "sqlite" in settings.DATABASE_URL:
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("[DB] All tables verified / created (WAL Mode)")
+    logger.info(f"[DB] All tables verified / created (Backend: {'SQLite' if 'sqlite' in settings.DATABASE_URL else 'PostgreSQL'})")
 
     await _seed_defaults()
 
