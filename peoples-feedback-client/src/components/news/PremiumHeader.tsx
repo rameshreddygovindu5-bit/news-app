@@ -50,17 +50,19 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   useEffect(() => {
     const init = () => {
       if (!document.getElementById('gt-script')) {
+        (window as any).gtInit = () => {
+          if ((window as any).google && (window as any).google.translate) {
+            new (window as any).google.translate.TranslateElement({
+              pageLanguage: 'en', includedLanguages: 'te,hi,en,ta,kn,ml',
+              layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE, autoDisplay: false
+            }, 'google_translate_element');
+          }
+        };
         const s = document.createElement('script');
         s.id = 'gt-script';
-        s.src = '//translate.google.com/translate_a/element.js?cb=gtInit';
+        s.src = 'https://translate.google.com/translate_a/element.js?cb=gtInit';
         s.async = true;
         document.body.appendChild(s);
-        (window as any).gtInit = () => {
-          new (window as any).google.translate.TranslateElement({
-            pageLanguage: 'en', includedLanguages: 'te,hi,en,ta,kn,ml',
-            layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE, autoDisplay: false
-          }, 'google_translate_element');
-        };
       }
     };
     const t = setTimeout(init, 0);
