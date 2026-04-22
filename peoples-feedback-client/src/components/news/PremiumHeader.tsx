@@ -63,7 +63,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
         };
       }
     };
-    const t = setTimeout(init, 800);
+    const t = setTimeout(init, 0);
     return () => clearTimeout(t);
   }, [location]);
 
@@ -71,7 +71,16 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }];
 
   useEffect(() => {
-    if (!location.startsWith('/telugu') && !location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
+    // AUTO-SWITCH TO TELUGU UI: If on /telugu path but no Telugu cookie, set it and reload
+    if (location.startsWith('/telugu')) {
+      if (!document.cookie.includes('googtrans=/en/te')) {
+        document.cookie = `googtrans=/en/te; path=/;`;
+        document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
+        window.location.reload();
+      }
+    } 
+    // AUTO-SWITCH TO ENGLISH: If NOT on /telugu or /hindi but has Telugu cookie, remove it
+    else if (!location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
       window.location.reload();
@@ -91,7 +100,12 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const handleCat = (cat: string) => {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (cat === 'తెలుగు వార్తలు') { setLocation('/telugu'); return; }
+    if (cat === 'తెలుగు వార్తలు') { 
+      document.cookie = `googtrans=/en/te; path=/;`;
+      document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
+      setLocation('/telugu'); 
+      return; 
+    }
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
     const id = cat === 'Home' ? '' : cat;
     onCategoryChange?.(id || 'All');
@@ -135,9 +149,12 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     items.push({ name: 'Wishes', path: 'Wishes', isWishes: true });
     return items;
   }, [activeCategories]);
+  
+  const isTe = location.startsWith('/telugu');
+  const t = (en: string, te: string) => isTe ? te : en;
 
   return (
-    <header className="flex flex-col w-full z-50 notranslate">
+    <header className="flex flex-col w-full z-50">
       <div className="tricolor-stripe" />
 
       {/* Top utility bar — hidden on mobile */}
@@ -188,7 +205,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                     <img src="/pf-logo.png" alt="PF" className="h-8 md:h-16 w-auto object-contain filter drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
                   </div>
                   <div className="flex flex-col items-center md:items-start min-w-0">
-                    <h1 className="text-lg sm:text-xl md:text-5xl font-black tracking-tight text-tricolor transition-transform duration-300 truncate md:whitespace-normal" style={{ fontFamily: 'var(--font-headline)' }}>
+                    <h1 className="text-lg sm:text-xl md:text-5xl font-black tracking-tight text-tricolor transition-transform duration-300 truncate md:whitespace-normal notranslate" style={{ fontFamily: 'var(--font-headline)' }}>
                       Peoples Feedback
                     </h1>
                     <div className="hidden sm:flex items-center gap-2 md:gap-3 mt-1 md:mt-2">
@@ -209,7 +226,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           </div>
           <div className="hidden md:flex items-center">
             <form onSubmit={handleSearchSubmit} className="relative group">
-              <input className="pl-5 pr-12 py-3 bg-white border-2 border-gray-200 text-gray-900 text-sm w-56 focus:w-72 focus:bg-white focus:ring-2 focus:ring-[var(--pf-orange)]/30 focus:border-[var(--pf-orange)] outline-none transition-all duration-300 rounded-full shadow-sm" placeholder="Search news..." value={searchQuery} onChange={e => onSearchChange?.(e.target.value)} />
+              <input className="pl-5 pr-12 py-3 bg-white border-2 border-gray-200 text-gray-900 text-sm w-56 focus:w-72 focus:bg-white focus:ring-2 focus:ring-[var(--pf-orange)]/30 focus:border-[var(--pf-orange)] outline-none transition-all duration-300 rounded-full shadow-sm" placeholder={t("Search news...", "వార్తలను శోధించండి...")} value={searchQuery} onChange={e => onSearchChange?.(e.target.value)} />
               <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-[var(--pf-orange)] transition-colors duration-300">
                 <Search className="h-4 w-4" />
               </button>
@@ -265,7 +282,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
               <button onClick={() => handleCat('Home')}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
                   ${(!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
-                Home
+                {t("Home", "హోమ్")}
               </button>
               {activeCategories.filter(c => c !== 'Home').map(cat => (
                 <button key={cat} onClick={() => handleCat(cat)}
@@ -288,7 +305,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           </nav>
 
           <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold text-transparent bg-gradient-to-r from-[var(--pf-red)] to-[var(--pf-saffron)] bg-clip-text uppercase tracking-wider pl-6 border-l-2 border-gray-200">
-            <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" /><span>Trending</span>
+            <TrendingUp className="w-4 h-4 text-[var(--pf-red)]" /><span>{t("Trending", "ట్రెండింగ్")}</span>
           </div>
         </div>
       </motion.div>
@@ -388,7 +405,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   <form onSubmit={handleMobileSearchSubmit} className="flex-1 relative">
                     <input 
                       className="w-full pl-4 pr-12 py-3 bg-gray-50 border-2 border-gray-200 text-gray-900 rounded-xl focus:bg-white focus:ring-2 focus:ring-[var(--pf-orange)]/30 focus:border-[var(--pf-orange)] outline-none transition-all" 
-                      placeholder="Search news..." 
+                      placeholder={t("Search news...", "వార్తలను శోధించండి...")} 
                       value={mobileSearchQuery}
                       onChange={e => setMobileSearchQuery(e.target.value)}
                       autoFocus

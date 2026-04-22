@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Globe } from "lucide-react";
 import { newsApi } from "@/lib/api";
 import { DEFAULT_CATEGORIES, type CategoryResponse } from "@/types/news";
+import { useLocation } from "wouter";
 
 const SOCIAL_LINKS = [
   {
@@ -67,9 +68,13 @@ export function PremiumFooter() {
   const cats = apiCats && apiCats.length > 0
     ? apiCats.map(c => c.name)
     : DEFAULT_CATEGORIES.filter(c => c !== "Home");
+  
+  const [location] = useLocation();
+  const isTe = location.startsWith('/telugu');
+  const t = (en: string, te: string) => isTe ? te : en;
 
   return (
-    <footer className="bg-[var(--pf-dark)] text-zinc-400 pt-16 pb-8 relative overflow-hidden notranslate">
+    <footer className="bg-[var(--pf-dark)] text-zinc-400 pt-16 pb-8 relative overflow-hidden">
       {/* Indian flag tricolor top accent */}
       <div className="tricolor-stripe mb-12 opacity-70" />
 
@@ -85,7 +90,7 @@ export function PremiumFooter() {
                 className="h-12 w-auto opacity-80 group-hover:opacity-100 transition-opacity filter brightness-0 invert"
               />
               <div>
-                <h2 className="text-2xl font-black text-tricolor leading-none" style={{ fontFamily: "var(--font-headline)" }}>
+                <h2 className="text-2xl font-black text-tricolor leading-none notranslate" style={{ fontFamily: "var(--font-headline)" }}>
                   Peoples Feedback
                 </h2>
                 <span className="text-[10px] font-bold tracking-[0.2em] text-[var(--pf-saffron)] uppercase">
@@ -115,7 +120,7 @@ export function PremiumFooter() {
 
           {/* Sections */}
           <div className="md:col-span-2">
-            <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--pf-saffron)] mb-5">Sections</h4>
+            <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--pf-saffron)] mb-5">{t("Sections", "విభాగాలు")}</h4>
             <ul className="space-y-3 text-[13px]">
               <li>
                 <Link href="/" className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
@@ -144,7 +149,7 @@ export function PremiumFooter() {
 
           {/* Company */}
           <div className="md:col-span-2">
-            <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--pf-green)] mb-5">Company</h4>
+            <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--pf-green)] mb-5">{t("Company", "కంపెనీ")}</h4>
             <ul className="space-y-3 text-[13px]">
               {["About Us", "Our Mission", "Privacy Policy", "Terms of Use", "Contact Us", "Advertise"].map(item => (
                 <li key={item}>
@@ -161,7 +166,7 @@ export function PremiumFooter() {
             <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
               <div className="tricolor-stripe rounded-full mb-4 w-16" />
               <h4 className="text-lg font-black text-white mb-2" style={{ fontFamily: "var(--font-headline)" }}>
-                The Morning Brief
+                {t("The Morning Brief", "మార్నింగ్ బ్రీఫ్")}
               </h4>
               <p className="text-sm text-zinc-300 mb-5 leading-relaxed">
                 Important stories from India and the world, delivered every morning.
