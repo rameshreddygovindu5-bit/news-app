@@ -27,16 +27,10 @@ export default function TeluguPage() {
   } = useQuery<ArticleListResponse>({
     queryKey: ["telugu-articles", debouncedSearch, page],
     queryFn: () => {
-      // Calculate date 30 days ago
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const dateFrom = thirtyDaysAgo.toISOString().split('T')[0]; 
-
       return newsApi.getTeluguArticles({ 
         page, 
         page_size: 24, // Use a standard grid size for pagination
-        keyword: debouncedSearch || undefined,
-        date_from: dateFrom
+        keyword: debouncedSearch || undefined
       });
     },
     staleTime: 60 * 1000,
