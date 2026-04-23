@@ -4,7 +4,7 @@
  *      instead of replacing them with a new page.
  */
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PremiumHeader } from "@/components/news/PremiumHeader";
 import { PremiumFooter } from "@/components/news/PremiumFooter";
 import { NewsLayout } from "@/components/news/NewsLayout";
@@ -84,6 +84,20 @@ export default function Home() {
   const handleCategoryChange = useCallback((c: string) => {
     setCat(c);
   }, []);
+
+  // ── Prefetch Telugu articles in background so /telugu loads instantly ──
+  const qc = useQueryClient();
+  useEffect(() => {
+    // Wait a moment for Home to settle, then warm the Telugu cache
+    const t = setTimeout(() => {
+      qc.prefetchQuery({
+        queryKey: ["telugu-articles", "", 1],
+        queryFn: () => newsApi.getTeluguArticles({ page: 1, page_size: 24 }),
+        staleTime: 60 * 1000,
+      });
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [qc]);
   
   return (
     <div className="min-h-screen bg-tricolor-light text-zinc-900">
