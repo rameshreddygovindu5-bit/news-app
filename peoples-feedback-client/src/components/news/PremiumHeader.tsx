@@ -73,16 +73,15 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }];
 
   useEffect(() => {
-    // AUTO-SWITCH TO TELUGU UI: If on /telugu path but no Telugu cookie, set it and reload
+    // We only need this as a fallback if someone navigated via direct URL or back button
+    // and the cookie doesn't match the path.
     if (location.startsWith('/telugu')) {
       if (!document.cookie.includes('googtrans=/en/te')) {
         document.cookie = `googtrans=/en/te; path=/;`;
         document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
         window.location.reload();
       }
-    } 
-    // AUTO-SWITCH TO ENGLISH: If NOT on /telugu or /hindi but has Telugu cookie, remove it
-    else if (!location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
+    } else if (!location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
       window.location.reload();
@@ -102,14 +101,29 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const handleCat = (cat: string) => {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    
     if (cat === 'తెలుగు వార్తలు') { 
       document.cookie = `googtrans=/en/te; path=/;`;
       document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-      window.location.href = '/telugu'; 
+      if (!location.startsWith('/telugu')) {
+        window.location.href = '/telugu';
+      } else {
+        setLocation('/telugu');
+      }
       return; 
     }
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
+    
     const id = cat === 'Home' ? '' : cat;
+    
+    // If switching from Telugu/Hindi back to English, force hard reload
+    if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      window.location.href = id ? `/news?category=${id}` : '/';
+      return;
+    }
+    
     onCategoryChange?.(id || 'All');
     if (id) setLocation(`/news?category=${id}`); else setLocation('/');
   };
@@ -293,12 +307,12 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   {cat}
                 </button>
               ))}
-              <button onClick={() => { window.location.href = '/telugu'; }}
+              <button onClick={() => handleCat('తెలుగు వార్తలు')}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all telugu border
                   ${location === '/telugu' ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 తెలుగు
               </button>
-              <button onClick={() => { setLocation('/wishes'); }}
+              <button onClick={() => handleCat('Wishes')}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
                   ${location === '/wishes' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 Wishes

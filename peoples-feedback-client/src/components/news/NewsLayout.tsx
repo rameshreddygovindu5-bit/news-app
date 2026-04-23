@@ -54,7 +54,7 @@ const timeAgo = (d?: string) => {
 
 /* ── Hero Card ───────────────────────────────────────────────────────── */
 const HeroCard = ({ article, lang = "en", linkPrefix = "news" }: { article: NewsArticle; lang?: "en" | "te"; linkPrefix?: string }) => (
-  <a href={`/${linkPrefix}/${article.slug || article.id}`}>
+  <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
     <div className="group cursor-pointer relative overflow-hidden bg-[var(--pf-navy)] rounded-2xl shadow-2xl premium-card transform transition-all duration-700 hover:shadow-3xl">
       <div className="aspect-[16/9] sm:aspect-[21/9] md:aspect-[2.5/1] relative news-image-wrapper pf-image-wrap">
         <img
@@ -101,13 +101,13 @@ const HeroCard = ({ article, lang = "en", linkPrefix = "news" }: { article: News
           </div>
         </div>
       </div>
-    </a>
+    </Link>
 );
 
 /* ── Article Card ────────────────────────────────────────────────────── */
 const ArticleCard = ({ article, size = "md", lang = "en", linkPrefix = "news" }: { article: NewsArticle; size?: "lg" | "md" | "sm"; lang?: "en" | "te"; linkPrefix?: string }) => (
 <div className="h-full animate-fade-in">
-    <a href={`/${linkPrefix}/${article.slug || article.id}`}>
+    <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
       <div className="group cursor-pointer h-full bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden premium-card hover:border-[var(--pf-saffron)]/30 transition-all duration-500">
         {size !== "sm" && (
           <div className="aspect-video relative overflow-hidden news-image-wrapper pf-image-wrap">
@@ -159,13 +159,13 @@ const ArticleCard = ({ article, size = "md", lang = "en", linkPrefix = "news" }:
           </div>
         </div>
       </div>
-    </a>
+    </Link>
 </div>
 );
 
 /* ── Ranked Item ─────────────────────────────────────────────────────── */
 const RankedItem = ({ article, rank, lang = "en", linkPrefix = "news" }: { article: NewsArticle; rank: number; lang?: "en" | "te"; linkPrefix?: string }) => (
-  <a href={`/${linkPrefix}/${article.slug || article.id}`}>
+  <Link href={`/${linkPrefix}/${article.slug || article.id}`}>
     <div className="group cursor-pointer flex gap-4 py-4 border-b border-gray-100 last:border-0 hover:bg-[var(--pf-saffron)]/5 transition-colors rounded-lg px-2">
       <span
         className="text-3xl font-black text-zinc-300 group-hover:text-[var(--pf-saffron)] transition-colors w-8 shrink-0 leading-none"
@@ -189,7 +189,7 @@ const RankedItem = ({ article, rank, lang = "en", linkPrefix = "news" }: { artic
         </div>
       </div>
     </div>
-  </a>
+  </Link>
 );
 
 /* ── Skeleton ─────────────────────────────────────────────────────────── */
@@ -240,9 +240,9 @@ function WishesSidebar() {
           </div>
         ))}
       </div>
-      <a href="/wishes" className="flex items-center justify-center gap-1.5 mt-4 pt-3 border-t border-pink-200 text-[11px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-800 transition-colors">
+      <Link href="/wishes" className="flex items-center justify-center gap-1.5 mt-4 pt-3 border-t border-pink-200 text-[11px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-800 transition-colors">
         View All <ArrowRight className="w-3 h-3" />
-      </a>
+      </Link>
     </div>
   );
 }
@@ -339,11 +339,11 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                       {new Date(a.published_at!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </td>
                     <td className="px-6 py-4">
-                      <a href={`/${linkPrefix}/${a.slug || a.id}`}>
+                      <Link href={`/${linkPrefix}/${a.slug || a.id}`}>
                         <span className={`font-black text-zinc-800 group-hover:text-[var(--pf-saffron)] transition-colors cursor-pointer ${lang === 'te' ? 'telugu' : ''}`}>
                           {getTitle(a, lang)}
                         </span>
-                      </a>
+                      </Link>
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-2 py-1 bg-zinc-100 text-[10px] font-black uppercase tracking-tighter text-zinc-500 rounded-sm">
@@ -357,11 +357,11 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <a href={`/${linkPrefix}/${a.slug || a.id}`}>
+                      <Link href={`/${linkPrefix}/${a.slug || a.id}`}>
                         <button className="px-4 py-1.5 border border-[var(--pf-navy)] text-[var(--pf-navy)] text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-[var(--pf-navy)] hover:text-white transition-all">
                           View Results
                         </button>
-                      </a>
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -412,11 +412,11 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
         <div className="flex-1 overflow-hidden">
           <div className="flex animate-marquee whitespace-nowrap items-center">
             {[...tickerItems, ...tickerItems].map((a, i) => (
-              <a key={`${a.id}-${i}`} href={`/${linkPrefix}/${a.slug || a.id}`}>
+              <Link key={`${a.id}-${i}`} href={`/${linkPrefix}/${a.slug || a.id}`}>
                 <span className={`text-[12px] font-medium px-5 hover:text-[var(--pf-saffron)] cursor-pointer border-r border-white/20 transition-colors ${lang === 'te' ? 'telugu' : ''}`}>
                   {getTitle(a, lang)}
                 </span>
-              </a>
+              </Link>
             ))}
           </div>
         </div>
@@ -467,12 +467,12 @@ export function NewsLayout({ articles, isLoading, onLoadMore, hasMore, isLoading
                     {cat === "Home" ? (lang === 'te' ? "తాజా వార్తలు" : "Headlines") : cat}
                   </h2>
                 </div>
-                <a
+                <Link
                   href={cat === "Home" || cat === "Latest Updates" ? `/${linkPrefix}` : `/${linkPrefix}?category=${cat}`}
                   className="flex items-center gap-2 bg-[var(--pf-navy)]/5 text-[var(--pf-navy)] px-5 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-[var(--pf-navy)] hover:text-white transition-all border border-[var(--pf-navy)]/10"
                 >
                   {lang === 'te' ? 'అన్నీ చూడండి' : 'Full Feed'} <ArrowRight className="w-4 h-4" />
-                </a>
+                </Link>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {items[0] && (

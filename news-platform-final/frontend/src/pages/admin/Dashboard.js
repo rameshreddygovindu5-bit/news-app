@@ -108,40 +108,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="card">
-          <div className="card-header"><h3>Source Distribution</h3></div>
-          <div style={{ height: 280, padding: '0 10px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={s.source_stats} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#2a3246" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="source" type="category" width={100} tick={{ fill: '#fff', fontSize: 10 }} />
-                <Tooltip cursor={{ fill: '#2a3246' }} contentStyle={{ background: '#1a2236', border: 'none', borderRadius: 8, color: '#fff' }} />
-                <Bar dataKey="count" fill="var(--india-saffron)" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid-2" style={{ marginBottom: 20 }}>
-        <div className="card">
-          <div className="card-header"><h3>Source Wise News Numbers</h3></div>
-          <div className="table-container" style={{ maxHeight: 300, overflowY: 'auto' }}>
-            <table className="table">
-              <thead><tr><th>Source Channel</th><th style={{ textAlign: 'right' }}>Articles</th></tr></thead>
-              <tbody>
-                {(s.source_stats || []).map((src, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 600 }}>{src.source}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--india-green)', fontWeight: 700 }}>{src.count.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="card">
           <div className="card-header"><h3>Pipeline Health</h3></div>
           <div className="table-container">
             <table className="table">

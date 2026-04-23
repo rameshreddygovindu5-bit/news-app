@@ -159,10 +159,6 @@ jobs:
             # Clean up
             rm -f /tmp/public-dist.tar.gz /tmp/admin-dist.tar.gz /tmp/backend.tar.gz /tmp/update-nginx.sh
 
-            # Expose log for debugging
-            sudo cp $BACKEND_DIR/backend.log /var/www/peoples-feedback/backend_error.txt 2>/dev/null || true
-            sudo chown www-data:www-data /var/www/peoples-feedback/backend_error.txt 2>/dev/null || true
-
             echo "========================================"
             echo "  Deploy complete: $(date)"
             echo "  Public:  http://$HOSTNAME"

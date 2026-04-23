@@ -12,7 +12,7 @@ from app.schemas.schemas import (
     SchedulerLogResponse, SchedulerAction,
     SchedulerConfigResponse, SchedulerConfigUpdate
 )
-from app.services.auth_service import get_current_user, require_admin
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/api/scheduler", tags=["Scheduler"])
 settings = get_settings()
@@ -233,7 +233,7 @@ async def get_post_errors(
 async def set_image_mode(
     use_custom: bool,
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(require_admin),
+    current_user = Depends(get_current_user),
 ):
     """
     Toggle image display mode:

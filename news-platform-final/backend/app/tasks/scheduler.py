@@ -177,22 +177,13 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
             )
             logger.info(f"[SCHED] ✓ AWS Sync: minute={settings.SCHEDULE_AWS_SYNC_MINUTES}")
 
-        # Cleanup — every 6 hours
+        # Cleanup — every 6 hours (fixed, not cron-per-minute)
         if settings.SCHEDULE_CLEANUP_ENABLED:
             _scheduler.add_job(
                 lambda: _run_step("cleanup", "app.tasks.celery_app.cleanup_old_articles"),
                 IntervalTrigger(hours=6), id="cleanup_job", name="Cleanup",
             )
             logger.info("[SCHED] ✓ Cleanup: every 6 hours")
-
-        # MASTER HEARTBEAT — The complete coordinated workflow (Scrape → AI → Rank → Sync)
-        # This ensures all stages run in order and includes self-healing.
-        _scheduler.add_job(
-            lambda: _run_step("heartbeat", "app.tasks.celery_app.run_master_heartbeat"),
-            CronTrigger(minute="*/10", timezone="UTC"),
-            id="heartbeat_job", name="Master Heartbeat",
-        )
-        logger.info("[SCHED] ✓ Master Heartbeat: every 10 minutes")
     else:
         logger.info("[SCHED] Running in BATCH MODE — Automatic intervals disabled")
 

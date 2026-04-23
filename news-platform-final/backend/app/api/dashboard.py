@@ -69,17 +69,6 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
 
         cat_res = await db.execute(select(NewsArticle.category, func.count(NewsArticle.id)).where(NewsArticle.flag != "D").group_by(NewsArticle.category))
         category_stats = [{"category": r[0] or "Uncategorized", "count": r[1]} for r in cat_res.all()]
-
-        # --- NEW: SOURCE STATS ---
-        source_res = await db.execute(
-            select(NewsSource.name, func.count(NewsArticle.id))
-            .join(NewsArticle, NewsArticle.source_id == NewsSource.id)
-            .where(NewsArticle.flag != "D")
-            .group_by(NewsSource.name)
-            .order_by(func.count(NewsArticle.id).desc())
-        )
-        source_stats = [{"source": r[0], "count": r[1]} for r in source_res.all()]
-
     except Exception as e:
         import traceback
         debug_info["error"] = str(e)
@@ -110,7 +99,6 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         "aws": aws_data,
         "recent_scrapes": recent_logs,
         "category_stats": category_stats,
-        "source_stats": source_stats,
         "sources_count": (await db.execute(select(func.count(NewsSource.id)))).scalar() or 0,
         "active_sources": (await db.execute(select(func.count(NewsSource.id)).where(NewsSource.is_enabled==True))).scalar() or 0,
         "debug": debug_info,

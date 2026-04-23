@@ -250,7 +250,7 @@ async def list_articles(
             filters.append(NewsArticle.created_at >= dt_from)
         except Exception as e:
             logger.warning(f"Invalid date_from format: {date_from} - {e}")
-            # Skip filter if invalid
+            filters.append(NewsArticle.created_at >= date_from)
 
     if date_to:
         try:
@@ -262,14 +262,14 @@ async def list_articles(
             filters.append(NewsArticle.created_at <= dt_to)
         except Exception as e:
             logger.warning(f"Invalid date_to format: {date_to} - {e}")
-            # Skip filter if invalid
+            filters.append(NewsArticle.created_at <= date_to)
 
     if filters:
         query = query.where(and_(*filters))
         count_query = count_query.where(and_(*filters))
     total = (await db.execute(count_query)).scalar() or 0
     offset = (page - 1) * page_size
-    query = query.order_by(desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))).offset(offset).limit(page_size)
+    query = query.order_by(desc(NewsArticle.created_at)).offset(offset).limit(page_size)
     rows = (await db.execute(query)).all()
     return NewsArticleListResponse(
         articles=[article_to_response(r[0], r[1]) for r in rows],
@@ -304,7 +304,7 @@ async def get_top_news(
         telugu_page
     ).order_by(
         desc(NewsArticle.rank_score),
-        desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))
+        desc(NewsArticle.created_at)
     ).limit(cap)
 
     rows = (await db.execute(q_y)).all()
@@ -325,7 +325,7 @@ async def get_top_news(
             ),
             telugu_page
         ).order_by(
-            desc(func.coalesce(NewsArticle.published_at, NewsArticle.created_at))
+            desc(NewsArticle.created_at)
         ).limit(cap)
         rows = (await db.execute(q_a)).all()
 

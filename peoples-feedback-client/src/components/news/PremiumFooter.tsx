@@ -135,9 +135,9 @@ export function PremiumFooter() {
                 </li>
               ))}
               <li>
-                <Link href="/telugu" className="text-[var(--pf-saffron)] hover:text-white transition-all inline-block telugu font-bold">
+                <a href="/telugu" className="text-[var(--pf-saffron)] hover:text-white transition-all inline-block telugu font-bold">
                   తెలుగు వార్తలు
-                </Link>
+                </a>
               </li>
               <li>
                 <Link href="/wishes" className="text-rose-400 hover:text-white transition-all inline-block font-bold">
