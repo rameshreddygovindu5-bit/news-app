@@ -83,7 +83,8 @@ def worker_scrape_source(source_id, run_id):
         for a in articles:
             ch = hashlib.sha256(f"{source_id}{a.title.lower()}".encode()).hexdigest()
             if db.query(NewsArticle.id).filter(NewsArticle.content_hash==ch).first(): continue
-            slug = f"{re.sub(r'[^\\w\\s-]','',a.title.lower())[:80].replace(' ','-')}-{hashlib.md5(a.url.encode()).hexdigest()[:4]}"
+            clean_t = re.sub(r'[^\w\s-]', '', a.title.lower())[:80].replace(' ', '-')
+            slug = f"{clean_t}-{hashlib.md5(a.url.encode()).hexdigest()[:4]}"
             db.add(NewsArticle(source_id=source_id, original_title=a.title, original_content=a.content, original_url=a.url, original_language=src.language, content_hash=ch, flag="N", ai_status="pending", category="Home", slug=slug, image_url=a.image_url))
             stats["inserted"] += 1
         src.last_scraped_at = datetime.now(timezone.utc); db.commit()
