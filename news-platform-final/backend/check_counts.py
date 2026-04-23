@@ -1,0 +1,12 @@
+import sqlite3
+conn = sqlite3.connect('newsagg.db')
+cur = conn.cursor()
+cur.execute("SELECT count(*) FROM news_articles WHERE original_language='en' AND flag='Y'")
+print(f"English Y: {cur.fetchone()[0]}")
+cur.execute("SELECT count(*) FROM news_articles WHERE original_language='te' AND flag='Y'")
+print(f"Telugu Y: {cur.fetchone()[0]}")
+cur.execute("SELECT count(*) FROM news_articles WHERE original_language='en' AND flag='A'")
+print(f"English A: {cur.fetchone()[0]}")
+cur.execute("SELECT count(*) FROM news_articles WHERE original_language='te' AND flag='A'")
+print(f"Telugu A: {cur.fetchone()[0]}")
+conn.close()
