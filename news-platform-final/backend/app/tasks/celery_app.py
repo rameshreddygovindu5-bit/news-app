@@ -606,11 +606,22 @@ def sync_to_aws():
         conn.autocommit = True
         cur = conn.cursor()
 
-        # 1. Ensure AWS has telugu columns
-        for col, coltype in [("telugu_title", "TEXT"), ("telugu_content", "TEXT")]:
+        # 1. Ensure AWS has telugu columns and content_hash column
+        for col, coltype in [("telugu_title", "TEXT"), ("telugu_content", "TEXT"), ("content_hash", "VARCHAR(64)")]:
             try:
                 cur.execute(f"ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS {col} {coltype};")
             except Exception: pass
+
+        # 1.5. Ensure all local articles have content_hash
+        articles_without_hash = db.query(NewsArticle).filter(
+            (NewsArticle.content_hash.is_(None)) | (NewsArticle.content_hash == '')
+        ).all()
+        if articles_without_hash:
+            logger.info(f"[AWS] Generating content_hash for {len(articles_without_hash)} articles...")
+            for art in articles_without_hash:
+                hash_input = f"{art.original_title or ''}{art.original_content or ''}"
+                art.content_hash = hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
+            db.commit()
 
         # 2. Categories
         local_cats = db.query(Category).all()

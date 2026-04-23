@@ -73,29 +73,49 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }];
 
   useEffect(() => {
-    // We only need this as a fallback if someone navigated via direct URL or back button
-    // and the cookie doesn't match the path.
+    // Set/clear googtrans cookie to match the current path.
+    // NO reload needed — Telugu articles already have telugu_title/telugu_content
+    // from AI processing, rendered directly via getTitle(article, 'te').
+    // Google Translate is only for minor UI chrome and will activate naturally.
     if (location.startsWith('/telugu')) {
       if (!document.cookie.includes('googtrans=/en/te')) {
         document.cookie = `googtrans=/en/te; path=/;`;
         document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-        window.location.reload();
+        // Programmatically trigger Google Translate if already loaded
+        try {
+          const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+          if (sel) { sel.value = 'te'; sel.dispatchEvent(new Event('change')); }
+        } catch {}
       }
     } else if (!location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-      window.location.reload();
+      // Programmatically reset Google Translate if loaded
+      try {
+        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
+      } catch {}
     }
   }, [location]);
 
   const switchLang = (code: string) => {
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-    if (code !== 'en') {
-      document.cookie = `googtrans=/en/${code}; path=/;`;
-      document.cookie = `googtrans=/en/${code}; path=/; domain=${window.location.hostname};`;
+    if (code === 'te') {
+      document.cookie = `googtrans=/en/te; path=/;`;
+      document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
+      setLocation('/telugu');
+    } else {
+      // Navigate to home for English
+      if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
+        setLocation('/');
+      }
+      // Programmatically reset Google Translate
+      try {
+        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
+      } catch {}
     }
-    window.location.reload();
   };
 
   const handleCat = (cat: string) => {
@@ -103,25 +123,23 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
     if (cat === 'తెలుగు వార్తలు') { 
-      document.cookie = `googtrans=/en/te; path=/;`;
-      document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-      if (!location.startsWith('/telugu')) {
-        window.location.href = '/telugu';
-      } else {
-        setLocation('/telugu');
-      }
+      // Cookie will be set by the useEffect when location changes to /telugu
+      setLocation('/telugu');
       return; 
     }
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
     
     const id = cat === 'Home' ? '' : cat;
     
-    // If switching from Telugu/Hindi back to English, force hard reload
+    // Clear Telugu cookie when switching back to English
     if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-      window.location.href = id ? `/news?category=${id}` : '/';
-      return;
+      // Programmatically reset Google Translate
+      try {
+        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
+      } catch {}
     }
     
     onCategoryChange?.(id || 'All');
