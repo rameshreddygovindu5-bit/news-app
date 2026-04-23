@@ -148,8 +148,8 @@ def sync_to_aws():
         
         recs = db.query(NewsArticle).filter(NewsArticle.updated_at > meta.last_sync_at - timedelta(minutes=5)).all()
         if recs:
-            SQL = "INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,rephrased_title,rephrased_content,telugu_title,telugu_content,category,slug,flag,updated_at) VALUES %s ON CONFLICT (original_url) DO UPDATE SET flag=EXCLUDED.flag, rephrased_title=EXCLUDED.rephrased_title, telugu_title=EXCLUDED.telugu_title, updated_at=EXCLUDED.updated_at"
-            data = [(r.source_id, r.original_title, r.original_content, r.original_url, r.original_language, r.rephrased_title, r.rephrased_content, r.telugu_title, r.telugu_content, r.category, r.slug, r.flag, r.updated_at) for r in recs]
+            SQL = "INSERT INTO news_articles (source_id,original_title,original_content,original_url,original_language,rephrased_title,rephrased_content,telugu_title,telugu_content,category,slug,flag,content_hash,updated_at) VALUES %s ON CONFLICT (original_url) DO UPDATE SET flag=EXCLUDED.flag, rephrased_title=EXCLUDED.rephrased_title, telugu_title=EXCLUDED.telugu_title, updated_at=EXCLUDED.updated_at"
+            data = [(r.source_id, r.original_title, r.original_content, r.original_url, r.original_language, r.rephrased_title, r.rephrased_content, r.telugu_title, r.telugu_content, r.category, r.slug, r.flag, r.content_hash, r.updated_at) for r in recs]
             execute_values(cur, SQL, data)
             meta.last_sync_at = datetime.now(timezone.utc)
         
