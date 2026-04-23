@@ -93,19 +93,21 @@ def cmd_status():
 
     db = SyncSessionLocal()
     try:
-        total   = db.execute(select(func.count(NewsArticle.id))).scalar() or 0
-        top     = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.flag == "Y")).scalar() or 0
-        pending = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.ai_status == "pending")).scalar() or 0
-        failed  = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.ai_status == "failed")).scalar() or 0
-        sources = db.execute(select(func.count(NewsSource.id)).where(NewsSource.is_enabled == True)).scalar() or 0
-        cats    = db.execute(select(func.count(Category.id))).scalar() or 0
-        last    = db.execute(select(JobExecutionLog).order_by(JobExecutionLog.started_at.desc()).limit(1)).scalar_one_or_none()
+        total     = db.execute(select(func.count(NewsArticle.id))).scalar() or 0
+        top       = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.flag == "Y")).scalar() or 0
+        pending   = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.ai_status == "pending", NewsArticle.is_duplicate == False)).scalar() or 0
+        duplicate = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.ai_status == "skipped_duplicate")).scalar() or 0
+        failed    = db.execute(select(func.count(NewsArticle.id)).where(NewsArticle.ai_status == "failed")).scalar() or 0
+        sources   = db.execute(select(func.count(NewsSource.id)).where(NewsSource.is_enabled == True)).scalar() or 0
+        cats      = db.execute(select(func.count(Category.id))).scalar() or 0
+        last      = db.execute(select(JobExecutionLog).order_by(JobExecutionLog.started_at.desc()).limit(1)).scalar_one_or_none()
 
         bar = "-" * 48
         print(f"\n{bar}")
         print(f"  {'Articles total':<22}: {total:,}")
         print(f"  {'Top News (Y)':<22}: {top}")
-        print(f"  {'AI pending':<22}: {pending}")
+        print(f"  {'AI pending (New)':<22}: {pending}")
+        print(f"  {'Duplicates (Skipped)':<22}: {duplicate}")
         print(f"  {'AI failed':<22}: {failed}")
         print(f"  {'Active sources':<22}: {sources}")
         print(f"  {'Categories':<22}: {cats}")

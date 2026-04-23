@@ -12,7 +12,7 @@ from app.schemas.schemas import (
     SchedulerLogResponse, SchedulerAction,
     SchedulerConfigResponse, SchedulerConfigUpdate
 )
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/scheduler", tags=["Scheduler"])
 settings = get_settings()
@@ -228,3 +228,66 @@ async def get_post_errors(
     query = select(PostErrorLog).order_by(desc(PostErrorLog.created_at)).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
+
+@router.post("/set-image-mode")
+async def set_image_mode(
+    use_custom: bool,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_admin),
+):
+    """
+    Toggle image display mode:
+    - use_custom=true  → show category placeholder images (default, safe)
+    - use_custom=false → show scraped article images when available
+    
+    Also triggers a background job to update image_url for all articles.
+    """
+    from app.config import get_settings
+    settings = get_settings()
+    # Hot-patch the setting (persists for session; restart to reset from .env)
+    settings.USE_CUSTOM_IMAGES = use_custom
+
+    # Trigger background image update
+    import threading
+    def _update_images():
+        from app.database import SyncSessionLocal
+        from app.models.models import NewsArticle
+        from sqlalchemy import update
+        _db = SyncSessionLocal()
+        try:
+            _CAT_IMG = {
+                "Business": "/placeholders/business.png",
+                "Tech": "/placeholders/tech.png", "Technology": "/placeholders/tech.png",
+                "Entertainment": "/placeholders/entertainment.png",
+                "Sports": "/placeholders/sports.png", "Health": "/placeholders/health.png",
+                "Science": "/placeholders/science.png", "Politics": "/placeholders/politics.png",
+                "World": "/placeholders/world.png", "International": "/placeholders/world.png",
+                "India": "/placeholders/general.png", "U.S.": "/placeholders/world.png",
+                "Andhra Pradesh": "/placeholders/politics.png",
+                "Telangana": "/placeholders/politics.png",
+            }
+            if use_custom:
+                # Set all articles to category placeholder
+                for cat, img in _CAT_IMG.items():
+                    _db.execute(
+                        update(NewsArticle)
+                        .where(NewsArticle.category == cat)
+                        .values(image_url=img)
+                    )
+                # Default for unmapped categories
+                _db.execute(
+                    update(NewsArticle)
+                    .where(NewsArticle.category.notin_(list(_CAT_IMG.keys())))
+                    .values(image_url="/placeholders/general.png")
+                )
+            # For use_custom=false, keep existing scraped URLs intact
+            _db.commit()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"[IMAGE-MODE] Update failed: {e}")
+        finally:
+            _db.close()
+    
+    threading.Thread(target=_update_images, daemon=True).start()
+    mode = "custom placeholders" if use_custom else "scraped article images"
+    return {"message": f"Image mode set to {mode}. Updating all articles in background."}

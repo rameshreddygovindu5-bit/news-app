@@ -155,22 +155,43 @@ export const getSummary = (a: NewsArticle, max = 180, lang: 'en' | 'te' = 'en'):
 
 import { API_BASE } from "@/lib/api";
 
-/** Best available image URL — always returns a valid image, never undefined */
+/**
+ * Resolve the display image for an article.
+ *
+ * The backend already applies USE_CUSTOM_IMAGES logic:
+ *   - USE_CUSTOM_IMAGES=true  → article.image_url is always a /placeholders/ path
+ *   - USE_CUSTOM_IMAGES=false → article.image_url is the real scraped URL (or placeholder fallback)
+ *
+ * Frontend behaviour:
+ *   1. Relative /uploads/ path → prepend API base (our own upload)
+ *   2. /placeholders/ path → return as-is (served from our public folder)
+ *   3. External http(s) URL → return as-is (real scraped image)
+ *   4. Empty / invalid → fall back to category placeholder
+ */
 export const getImage = (a: NewsArticle): string => {
   const u = a.image_url?.trim();
-
-  // Relative upload path → our own server (safe to show)
-  if (u && (u.startsWith("/uploads") || u.startsWith("uploads/"))) {
+  if (!u || u === "null" || u === "undefined" || u === "") {
+    return categoryPlaceholder(a.category);
+  }
+  // Placeholder path served from our public folder
+  if (u.startsWith("/placeholders/")) return u;
+  // Uploaded file on our own server
+  if (u.startsWith("/uploads/") || u.startsWith("uploads/")) {
     const base = (API_BASE || "").replace(/\/$/, "");
     return `${base}/${u.replace(/^\//, "")}`;
   }
-
-  // External URL — use it but NewsLayout will overlay PF logo
-  if (u && u.startsWith("http") && u !== "null" && u !== "undefined") return u;
-
-  // No valid image → PF-branded category placeholder
+  // Real external URL
+  if (u.startsWith("http://") || u.startsWith("https://")) return u;
+  // Fallback
   return categoryPlaceholder(a.category);
 };
+
+/**
+ * Force a category placeholder regardless of image_url.
+ * Use this when you always want the branded category image.
+ */
+export const getCategoryImage = (a: NewsArticle): string =>
+  categoryPlaceholder(a.category);
 
 /** Strip HTML tags */
 function stripHtml(s: string): string {

@@ -74,6 +74,68 @@ async def _run_ai_and_rank(article_id: int):
         except Exception as e:
             logger.error(f"[AUTO-AI] Failed for article {article_id}: {e}")
 
+# ── Image URL resolver ────────────────────────────────────────────────────
+# Central logic for USE_CUSTOM_IMAGES setting.
+_CATEGORY_IMAGES = {
+    "Business":      "/placeholders/business.png",
+    "Tech":          "/placeholders/tech.png",
+    "Technology":    "/placeholders/tech.png",
+    "Entertainment": "/placeholders/entertainment.png",
+    "Sports":        "/placeholders/sports.png",
+    "Health":        "/placeholders/health.png",
+    "Science":       "/placeholders/science.png",
+    "Politics":      "/placeholders/politics.png",
+    "World":         "/placeholders/world.png",
+    "International": "/placeholders/world.png",
+    "India":         "/placeholders/general.png",
+    "U.S.":          "/placeholders/world.png",
+    "Andhra Pradesh":"/placeholders/politics.png",
+    "Telangana":     "/placeholders/politics.png",
+    "Events":        "/placeholders/general.png",
+    "Surveys":       "/placeholders/general.png",
+    "Polls":         "/placeholders/general.png",
+    "Home":          "/placeholders/general.png",
+    "General":       "/placeholders/general.png",
+}
+
+def _resolve_image_url(article, settings_obj=None) -> str:
+    """
+    Resolve the final image URL for an article.
+
+    Rules:
+      USE_CUSTOM_IMAGES=True  (default):
+        → Always return category-specific branded placeholder.
+          Consistent PF look, no third-party image copyright risk.
+      USE_CUSTOM_IMAGES=False:
+        → Return original scraped image URL if it is a real HTTP URL.
+          Fall back to category placeholder if URL is missing/invalid.
+    """
+    from app.config import get_settings
+    cfg = settings_obj or get_settings()
+    use_custom = getattr(cfg, "USE_CUSTOM_IMAGES", True)
+
+    cat = (getattr(article, "category", None) or "").strip()
+    placeholder = _CATEGORY_IMAGES.get(cat, "/placeholders/general.png")
+
+    if use_custom:
+        return placeholder
+
+    # USE_CUSTOM_IMAGES=False → try real URL first
+    raw_url = getattr(article, "image_url", None) or ""
+    raw_url = raw_url.strip()
+
+    # Accept only genuine HTTP/HTTPS external URLs or uploaded images
+    if raw_url.startswith("/uploads/") or raw_url.startswith("uploads/"):
+        return raw_url  # our own upload
+    if raw_url.startswith("http://") or raw_url.startswith("https://"):
+        # Reject placeholder paths that somehow got stored as absolute URLs
+        if "/placeholders/" not in raw_url:
+            return raw_url
+
+    # Fallback
+    return placeholder
+
+
 router = APIRouter(prefix="/api/articles", tags=["News Articles"])
 
 
@@ -97,7 +159,7 @@ def article_to_response(article, source_name: str = None) -> dict:
         "category": article.category, "slug": article.slug, "tags": article.tags or [],
         "content_hash": article.content_hash, "is_duplicate": article.is_duplicate,
         "flag": article.flag, "rank_score": article.rank_score or 0,
-        "image_url": article.image_url, "author": article.author,
+        "image_url": _resolve_image_url(article), "author": article.author,
         "submitted_by": article.submitted_by,
         "ai_status": getattr(article, 'ai_status', 'unknown'),
         "is_posted_fb": getattr(article, 'is_posted_fb', False),
@@ -188,7 +250,7 @@ async def list_articles(
             filters.append(NewsArticle.created_at >= dt_from)
         except Exception as e:
             logger.warning(f"Invalid date_from format: {date_from} - {e}")
-            filters.append(NewsArticle.created_at >= date_from)
+            # Skip filter if invalid
 
     if date_to:
         try:
@@ -200,7 +262,7 @@ async def list_articles(
             filters.append(NewsArticle.created_at <= dt_to)
         except Exception as e:
             logger.warning(f"Invalid date_to format: {date_to} - {e}")
-            filters.append(NewsArticle.created_at <= date_to)
+            # Skip filter if invalid
 
     if filters:
         query = query.where(and_(*filters))

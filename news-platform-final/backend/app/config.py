@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # IS_LOCAL_DEV=false (EC2): AWS sync is disabled; data is already local.
     IS_LOCAL_DEV: bool = True
 
+    # ── Image display mode ─────────────────────────────────────────────
+    # USE_CUSTOM_IMAGES=True  → show PF-branded category placeholder images (default, safe)
+    # USE_CUSTOM_IMAGES=False → show original scraped image URLs
+    USE_CUSTOM_IMAGES: bool = True
+
     # ── Ranking ───────────────────────────────────────────────────────
     TOP_NEWS_COUNT: int = 200          # Total top-ranked articles selected globally
     HOME_FEED_LIMIT: int = 200          # Max articles shown on Home feed (flag=Y only)
