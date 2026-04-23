@@ -22,3 +22,5 @@ passlib
 bcrypt
 python-jose[cryptography]
 python-multipart
+newspaper3k
+lxml_html_clean  
