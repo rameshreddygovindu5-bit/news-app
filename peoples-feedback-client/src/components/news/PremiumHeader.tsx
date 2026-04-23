@@ -105,7 +105,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     if (cat === 'తెలుగు వార్తలు') { 
       document.cookie = `googtrans=/en/te; path=/;`;
       document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-      setLocation('/telugu'); 
+      window.location.href = '/telugu'; 
       return; 
     }
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
@@ -293,7 +293,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   {cat}
                 </button>
               ))}
-              <button onClick={() => { setLocation('/telugu'); }}
+              <button onClick={() => { window.location.href = '/telugu'; }}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all telugu border
                   ${location === '/telugu' ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 తెలుగు
