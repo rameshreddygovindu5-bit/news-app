@@ -106,15 +106,10 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
       document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
       setLocation('/telugu');
     } else {
-      // Navigate to home for English
+      // Leaving Telugu/Hindi → hard reload to clear Google Translate DOM mutations
       if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
-        setLocation('/');
+        window.location.href = '/';
       }
-      // Programmatically reset Google Translate
-      try {
-        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
-        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
-      } catch {}
     }
   };
 
@@ -127,21 +122,20 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
       setLocation('/telugu');
       return; 
     }
-    if (cat === 'Wishes') { setLocation('/wishes'); return; }
     
-    const id = cat === 'Home' ? '' : cat;
-    
-    // Clear Telugu cookie when switching back to English
+    // Leaving Telugu/Hindi → must hard reload to undo Google Translate DOM changes
     if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-      // Programmatically reset Google Translate
-      try {
-        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
-        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
-      } catch {}
+      if (cat === 'Wishes') { window.location.href = '/wishes'; return; }
+      const id = cat === 'Home' ? '' : cat;
+      window.location.href = id ? `/news?category=${id}` : '/';
+      return;
     }
+
+    if (cat === 'Wishes') { setLocation('/wishes'); return; }
     
+    const id = cat === 'Home' ? '' : cat;
     onCategoryChange?.(id || 'All');
     if (id) setLocation(`/news?category=${id}`); else setLocation('/');
   };
