@@ -103,6 +103,10 @@ class NewsArticle(Base):
         Index("ix_articles_ranking", "flag", "ai_status", "is_duplicate", "rank_score"),
         Index("ix_articles_created_flag", "created_at", "flag"),
         Index("ix_articles_category_flag", "category", "flag"),
+        Index("ix_articles_lang_flag", "original_language", "flag"),
+        Index("ix_articles_pub_date", "published_at"),
+        Index("ix_articles_flag_created", "flag", "created_at"),
+        Index("ix_articles_flag_rank", "flag", "rank_score"),
     )
 
     source = relationship("NewsSource", back_populates="articles")

@@ -868,7 +868,8 @@ def sync_to_aws():
         except Exception as e:
             logger.error(f"[AWS] Pruning Error: {e}")
     except Exception as e:
-        logger.error(f"[AWS] Fatal: {e}"); complete_job(db, log, 0, 0, str(e))
+        logger.error(f"[AWS] Fatal: {e}")
+        complete_job(db, log, 0, 1, str(e))
     finally:
         db.close()
     _banner("AWS SYNC", False)
