@@ -847,23 +847,26 @@ def sync_to_aws():
         complete_job(db, log, ok, err)
         logger.info(f"[AWS] Synced {ok} ok, {err} err")
 
-        # 8. Pruning: Sync Deletions
+            # 8. Pruning: Sync Deletions & Physical Purge
         try:
             conn = psycopg2.connect(host=settings.AWS_DB_HOST, port=settings.AWS_DB_PORT, dbname=settings.AWS_DB_NAME, user=settings.AWS_DB_USER, password=settings.AWS_DB_PASSWORD)
             cur = conn.cursor()
             
-            # Deletions (Local flag 'D' -> Remote flag 'D')
+            # 8.1 Sync local deletions to AWS
             deleted_locally = db.query(NewsArticle.original_url).filter(NewsArticle.flag == "D").all()
             if deleted_locally:
                 deleted_urls = [r[0] for r in deleted_locally]
-                # Update in chunks of 500
                 for i in range(0, len(deleted_urls), 500):
                     chunk = deleted_urls[i:i+500]
-                    cur.execute("UPDATE news_articles SET flag='D' WHERE original_url IN %s", (tuple(chunk),))
+                    cur.execute("UPDATE news_articles SET flag='D' WHERE original_url IN %s AND flag != 'D'", (tuple(chunk),))
                 conn.commit()
             
-            # Physical Cleanup (If it doesn't exist locally at all, hide it in AWS)
-            # We don't want to delete from AWS if it's just 'archived' locally, but the user expects SYNC.
+            # 8.2 Physical Purge on AWS (Anything flagged 'D' for > 7 days)
+            cur.execute("DELETE FROM news_articles WHERE flag='D' AND updated_at < NOW() - INTERVAL '7 days'")
+            if cur.rowcount > 0:
+                logger.info(f"[AWS] Purged {cur.rowcount} old records from AWS production")
+            
+            conn.commit()
             cur.close(); conn.close()
         except Exception as e:
             logger.error(f"[AWS] Pruning Error: {e}")
@@ -981,15 +984,54 @@ def update_category_counts():
 
 # ── TASK 6: CLEANUP ───────────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.cleanup_old_articles")
-def cleanup_old_articles():
+def cleanup_old_articles(keep_count: int = 1000):
+    """
+    Weekly maintenance:
+    1. Keeps the most recent N articles (default 1,000).
+    2. Protects all Top News (flag='Y').
+    3. Soft-deletes everything else (flag='D').
+    """
     db = get_db()
     log = log_job(db, "maintenance")
     if not log: return
     try:
-        res = db.execute(update(NewsArticle).where(NewsArticle.flag!="D", NewsArticle.created_at<datetime.now(timezone.utc)-timedelta(days=30)).values(flag="D", deleted_at=func.now(), updated_at=func.now()))
-        db.commit(); complete_job(db, log, res.rowcount, 0)
-    except Exception as e: logger.error(f"[CLEANUP] {e}"); complete_job(db, log, 0, 0, str(e))
-    finally: db.close()
+        # Get IDs of articles to keep (most recent 1000)
+        keep_ids = [r[0] for r in db.execute(
+            select(NewsArticle.id)
+            .where(NewsArticle.flag != "D")
+            .order_by(desc(NewsArticle.created_at))
+            .limit(keep_count)
+        ).fetchall()]
+        
+        # Soft-delete articles that are NOT in the keep_ids AND NOT flag='Y'
+        # We also update updated_at so the deletion syncs to AWS
+        res = db.execute(
+            update(NewsArticle)
+            .where(
+                NewsArticle.flag != "D",
+                NewsArticle.flag != "Y",
+                NewsArticle.id.notin_(keep_ids)
+            )
+            .values(flag="D", deleted_at=func.now(), updated_at=func.now())
+        )
+        db.commit()
+        
+        # Physical cleanup for articles already marked 'D' for > 15 days to save space
+        purge_cutoff = datetime.now(timezone.utc) - timedelta(days=15)
+        purge_res = db.execute(
+            text("DELETE FROM news_articles WHERE flag = 'D' AND deleted_at < :cutoff"),
+            {"cutoff": purge_cutoff}
+        )
+        db.commit()
+        
+        msg = f"Soft-deleted {res.rowcount} old articles. Purged {purge_res.rowcount} archived records."
+        logger.info(f"[CLEANUP] {msg}")
+        complete_job(db, log, res.rowcount, 0, msg)
+    except Exception as e:
+        logger.error(f"[CLEANUP] {e}")
+        complete_job(db, log, 0, 1, str(e))
+    finally:
+        db.close()
 
 # ── TASK 7: SOCIAL POSTING ────────────────────────────────────────────
 @celery_app.task(name="app.tasks.celery_app.post_to_social")

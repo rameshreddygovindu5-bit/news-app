@@ -158,16 +158,23 @@ jobs:
             # Clear old logs to start fresh
             truncate -s 0 $BACKEND_DIR/backend.log || true
 
-            echo "Starting Backend..."
+            echo "Starting Backend & Workers..."
+            # Start FastAPI Backend
             nohup $BACKEND_DIR/venv/bin/python -m uvicorn app.main:app \
               --host 0.0.0.0 \
               --port 8005 \
               --workers 2 \
               >> $BACKEND_DIR/backend.log 2>&1 &
             
+            # Start Celery Worker (for manual triggers and async tasks)
+            nohup $BACKEND_DIR/venv/bin/env PYTHONPATH=$BACKEND_DIR $BACKEND_DIR/venv/bin/celery -A app.tasks.celery_app worker \
+              --loglevel=info \
+              --concurrency=2 \
+              >> $BACKEND_DIR/celery.log 2>&1 &
+
             disown
             sleep 5
-            echo "[4/4] Backend and Workers restarted"
+            echo "[4/4] Backend and Celery Workers started"
 
             # ── 5. Update & Reload Nginx ────────────────────────────────
             sudo bash /tmp/update-nginx.sh || (sudo nginx -t && sudo systemctl reload nginx)
