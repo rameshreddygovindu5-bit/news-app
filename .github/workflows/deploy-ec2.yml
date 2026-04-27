@@ -135,15 +135,12 @@ jobs:
             # Create uploads directory
             mkdir -p $BACKEND_DIR/uploads
 
-            # Set EC2 production environment
-            # IS_LOCAL_DEV=false means AWS sync is DISABLED (data is already local on EC2)
-            sed -i 's/^IS_LOCAL_DEV=.*/IS_LOCAL_DEV=false/' $BACKEND_DIR/.env || echo "IS_LOCAL_DEV=false" >> $BACKEND_DIR/.env
-            
-            # Update Database URLs to point to local PostgreSQL (URL-encoded password)
-            # ! -> %21, @ -> %40, # -> %23
-            # Password "PF2026Secure!@#" becomes "PF2026Secure%21%40%23"
-            sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+asyncpg://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|" $BACKEND_DIR/.env
-            sed -i "s|^DATABASE_URL_SYNC=.*|DATABASE_URL_SYNC=postgresql://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|" $BACKEND_DIR/.env
+            # 3.5 Prepare Production .env
+            # We append the production-specific overrides to ensure they take priority
+            echo "" >> $BACKEND_DIR/.env
+            echo "IS_LOCAL_DEV=false" >> $BACKEND_DIR/.env
+            echo "DATABASE_URL=postgresql+asyncpg://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe" >> $BACKEND_DIR/.env
+            echo "DATABASE_URL_SYNC=postgresql://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe" >> $BACKEND_DIR/.env
             
             # Delete malformed SQLite fallback to force usage of PostgreSQL
             rm -f $BACKEND_DIR/newsagg.db

@@ -27,10 +27,10 @@ class Settings(BaseSettings):
                 parsed = urlparse(self.DATABASE_URL.replace("+asyncpg", ""))
                 if not parsed.hostname:
                     raise ValueError("No hostname in DATABASE_URL")
-            except Exception:
+            except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(
-                    "[CONFIG] PostgreSQL URL invalid — falling back to SQLite"
+                    f"[CONFIG] PostgreSQL URL invalid ({e}) — falling back to SQLite"
                 )
                 self.DATABASE_URL = "sqlite+aiosqlite:///./newsagg.db"
                 self.DATABASE_URL_SYNC = "sqlite:///./newsagg.db"
