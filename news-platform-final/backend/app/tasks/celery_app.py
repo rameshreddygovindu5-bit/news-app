@@ -1024,7 +1024,24 @@ def cleanup_old_articles(keep_count: int = 1000):
         )
         db.commit()
         
-        msg = f"Soft-deleted {res.rowcount} old articles. Purged {purge_res.rowcount} archived records."
+        # 3. Log Cleanup: Keep only the last 2 days of execution and error logs
+        log_cutoff = datetime.now(timezone.utc) - timedelta(days=2)
+        db.execute(update(JobExecutionLog).where(JobExecutionLog.started_at < log_cutoff).values(status="CLEANUP")) # Mark for deletion
+        db.execute(text("DELETE FROM scheduler_logs WHERE started_at < :cutoff"), {"cutoff": log_cutoff})
+        db.execute(text("DELETE FROM source_error_logs WHERE created_at < :cutoff"), {"cutoff": log_cutoff})
+        db.execute(text("DELETE FROM post_error_logs WHERE created_at < :cutoff"), {"cutoff": log_cutoff})
+        db.commit()
+        
+        # 4. File-System Log Cleanup: Truncate physical log files to keep them small
+        try:
+            import subprocess
+            # Keep only the last 5000 lines of each log file
+            subprocess.run("tail -n 5000 backend.log > backend.log.tmp && mv backend.log.tmp backend.log", shell=True, check=False)
+            subprocess.run("tail -n 5000 celery.log > celery.log.tmp && mv celery.log.tmp celery.log", shell=True, check=False)
+        except Exception:
+            pass # Non-critical
+        
+        msg = f"Soft-deleted {res.rowcount} articles. Purged {purge_res.rowcount} records. Cleaned logs older than 48h."
         logger.info(f"[CLEANUP] {msg}")
         complete_job(db, log, res.rowcount, 0, msg)
     except Exception as e:
