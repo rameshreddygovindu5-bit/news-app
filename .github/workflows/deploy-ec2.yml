@@ -89,6 +89,16 @@ jobs:
             echo "  Peoples Feedback — Deploying..."
             echo "========================================"
 
+            # ── 0. Pre-Deployment Cleanup ───────────────────────────────
+            echo "Cleaning up /tmp and clearing old builds..."
+            sudo rm -f /tmp/*.tar.gz /tmp/update-nginx.sh
+            
+            # Ensure lsof is installed (Amazon Linux 2023)
+            if ! command -v lsof &> /dev/null; then
+                echo "Installing lsof..."
+                sudo dnf install -y lsof -q
+            fi
+
             # ── 1. Deploy Public Frontend ───────────────────────────────
             PUBLIC_DIR="/var/www/peoples-feedback"
             sudo mkdir -p $PUBLIC_DIR
