@@ -135,13 +135,14 @@ jobs:
             # Create uploads directory
             mkdir -p $BACKEND_DIR/uploads
 
-            # Set EC2 production environment (override local dev settings)
+            # Set EC2 production environment
             # IS_LOCAL_DEV=false means AWS sync is DISABLED (data is already local on EC2)
-            # DATABASE_URL points to PostgreSQL (not SQLite)
-            sed -i 's/^IS_LOCAL_DEV=.*/IS_LOCAL_DEV=false/' $BACKEND_DIR/.env 2>/dev/null || true
-            grep -q "IS_LOCAL_DEV" $BACKEND_DIR/.env || echo "IS_LOCAL_DEV=false" >> $BACKEND_DIR/.env
-            sed -i 's|^DATABASE_URL=sqlite.*|DATABASE_URL=postgresql+asyncpg://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|' $BACKEND_DIR/.env 2>/dev/null || true
-            sed -i 's|^DATABASE_URL_SYNC=sqlite.*|DATABASE_URL_SYNC=postgresql://appuser:PF2026Secure%21%40%23@localhost:5432/news_db_fe|' $BACKEND_DIR/.env 2>/dev/null || true
+            sed -i 's/^IS_LOCAL_DEV=.*/IS_LOCAL_DEV=false/' $BACKEND_DIR/.env || echo "IS_LOCAL_DEV=false" >> $BACKEND_DIR/.env
+            
+            # Update Database URLs to point to local PostgreSQL (using raw password)
+            # We use | as separator to avoid issues with / in the URL
+            sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+asyncpg://appuser:PF2026Secure\!@#@localhost:5432/news_db_fe|" $BACKEND_DIR/.env
+            sed -i "s|^DATABASE_URL_SYNC=.*|DATABASE_URL_SYNC=postgresql://appuser:PF2026Secure\!@#@localhost:5432/news_db_fe|" $BACKEND_DIR/.env
 
             # Run DB migration (skip gracefully if script missing)
             python -c "from app.database import Base; from app.models.models import *; print('Models loaded OK')" || echo "Model check warnings"
