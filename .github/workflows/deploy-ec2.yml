@@ -74,6 +74,11 @@ jobs:
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
+          # ── 0. Pre-Cleanup (on EC2) ──────────────────────────────────
+          echo "Clearing old builds from EC2 /tmp..."
+          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" \
+            "sudo rm -f /tmp/*.tar.gz /tmp/update-nginx.sh"
+
           # Upload all tarballs + nginx config
           scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
             /tmp/public-dist.tar.gz \
@@ -89,10 +94,6 @@ jobs:
             echo "  Peoples Feedback — Deploying..."
             echo "========================================"
 
-            # ── 0. Pre-Deployment Cleanup ───────────────────────────────
-            echo "Cleaning up /tmp and clearing old builds..."
-            sudo rm -f /tmp/*.tar.gz /tmp/update-nginx.sh
-            
             # Ensure lsof is installed (Amazon Linux 2023)
             if ! command -v lsof &> /dev/null; then
                 echo "Installing lsof..."
