@@ -151,22 +151,26 @@ jobs:
             # Run DB migration (skip gracefully if script missing)
             python -c "from app.database import Base; from app.models.models import *; print('Models loaded OK')" || echo "Model check warnings"
 
-            # ── 4. Restart Backend ──────────────────────────────────────
-            PID=$(sudo lsof -t -i :8005 2>/dev/null || true)
-            if [ -n "$PID" ]; then
-              echo "Stopping existing backend (PID: $PID)..."
-              sudo kill -9 $PID 2>/dev/null || true
-              sleep 2
-            fi
+            # ── 4. Restart Backend & Workers ────────────────────────────
+            echo "Stopping all existing processes..."
+            sudo pkill -9 -f "uvicorn" || true
+            sudo pkill -9 -f "celery" || true
+            sudo pkill -9 -f "python" || true
+            sleep 2
 
-            nohup uvicorn app.main:app \
+            # Clear old logs to start fresh
+            truncate -s 0 $BACKEND_DIR/backend.log || true
+
+            echo "Starting Backend..."
+            nohup $BACKEND_DIR/venv/bin/python -m uvicorn app.main:app \
               --host 0.0.0.0 \
               --port 8005 \
               --workers 2 \
               >> $BACKEND_DIR/backend.log 2>&1 &
+            
             disown
-            sleep 3
-            echo "[4/4] Backend restarted on port 8005"
+            sleep 5
+            echo "[4/4] Backend and Workers restarted"
 
             # ── 5. Update & Reload Nginx ────────────────────────────────
             sudo bash /tmp/update-nginx.sh || (sudo nginx -t && sudo systemctl reload nginx)
