@@ -159,10 +159,29 @@ export default function NewsDetail() {
           {/* Dynamic Back to Newsroom Link */}
           <Link
             href={article.source_id === 18 ? "/market-news" : (article.category ? `/news?category=${article.category}` : "/")}
-            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400 hover:text-[var(--pf-saffron)] transition-colors mb-6"
+            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400 hover:text-[var(--pf-saffron)] transition-colors mb-4"
           >
             <ArrowLeft className="w-3 h-3" /> Back to Newsroom
           </Link>
+
+          {/* Breadcrumbs */}
+          <nav className="flex items-center gap-1.5 text-[9px] text-zinc-400 font-bold uppercase tracking-widest mb-6 overflow-hidden">
+            <Link href="/" className="hover:text-[var(--pf-navy)] transition-colors shrink-0">Home</Link>
+            <ChevronRight className="w-2.5 h-2.5 shrink-0" />
+            {article.source_id === 18 ? (
+              <Link href="/market-news" className="hover:text-[var(--pf-navy)] transition-colors shrink-0">Market News</Link>
+            ) : (
+              article.category && (
+                <>
+                  <Link href={`/news?category=${article.category}`} className="hover:text-[var(--pf-navy)] transition-colors shrink-0">
+                    {article.category}
+                  </Link>
+                </>
+              )
+            )}
+            {article.category || article.source_id === 18 ? <ChevronRight className="w-2.5 h-2.5 shrink-0" /> : null}
+            <span className="text-zinc-300 truncate">{title}</span>
+          </nav>
 
           {/* Tricolor stripe */}
           <div className="tricolor-stripe rounded-full mb-6" />

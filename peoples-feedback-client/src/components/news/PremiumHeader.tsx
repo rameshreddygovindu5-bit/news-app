@@ -143,18 +143,32 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery?.trim()) {
-      setLocation(`/news?search=${encodeURIComponent(searchQuery.trim())}`);
+    const query = searchQuery?.trim();
+    if (!query) return;
+    
+    if (onSearchChange) {
+      onSearchChange(query);
+      return;
     }
+    
+    setLocation(`/news?search=${encodeURIComponent(query)}`);
   };
 
   const handleMobileSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (mobileSearchQuery?.trim()) {
-      setLocation(`/news?search=${encodeURIComponent(mobileSearchQuery.trim())}`);
+    const query = mobileSearchQuery?.trim();
+    if (!query) return;
+    
+    if (onSearchChange) {
+      onSearchChange(query);
       setMobileSearchOpen(false);
       setMobileSearchQuery("");
+      return;
     }
+
+    setLocation(`/news?search=${encodeURIComponent(query)}`);
+    setMobileSearchOpen(false);
+    setMobileSearchQuery("");
   };
 
   // FIX 5: Build menu config dynamically from active categories only
@@ -369,7 +383,8 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   const isActiveMain = isDirect && (
                     (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home')) ||
                     selectedCategory === main.path ||
-                    (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
+                    (main.path === 'తెలుగు వార్తలు' && location === '/telugu') ||
+                    (main.path === 'Market News' && location === '/market-news')
                   );
                   return (
                     <div key={main.name} className="space-y-1">
