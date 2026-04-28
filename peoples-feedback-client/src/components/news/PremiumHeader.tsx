@@ -102,13 +102,14 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     // Clear all translation state first
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+    document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
     
     if (code === 'te') {
       document.cookie = `googtrans=/en/te; path=/;`;
       document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-      setLocation('/telugu');
+      window.location.href = '/telugu';
     } else {
-      // Leaving Telugu/Hindi -> full redirect to ensure clean state
+      // Leaving Telugu -> full redirect to ensure clean state
       window.location.href = '/';
     }
   };
@@ -117,22 +118,29 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
-    if (cat === t('Home', 'హోమ్')) { setLocation('/'); return; }
-    if (cat === 'తెలుగు వార్తలు') { setLocation('/telugu'); return; }
-    
-    // Leaving Telugu/Hindi → must hard reload to undo Google Translate DOM changes
-    if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
+    // 1. CLEAR TRANSLATION STATE IF LEAVING TELUGU
+    if (location.startsWith('/telugu') && cat !== 'తెలుగు వార్తలు') {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
       
+      if (cat === t('Home', 'హోమ్')) { window.location.href = '/'; return; }
       if (cat === 'Wishes') { window.location.href = '/wishes'; return; }
       if (cat === 'Market News') { window.location.href = '/market-news'; return; }
-      
-      const id = cat === t('Home', 'హోమ్') ? '' : cat;
-      window.location.href = id ? `/news?category=${id}` : '/';
+      window.location.href = `/news?category=${cat}`;
       return;
     }
 
+    // 2. FORCE RELOAD IF ENTERING TELUGU
+    if (cat === 'తెలుగు వార్తలు') {
+      document.cookie = `googtrans=/en/te; path=/;`;
+      document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
+      window.location.href = '/telugu';
+      return;
+    }
+
+    // 3. REGULAR SPA NAVIGATION (Non-language changing)
+    if (cat === t('Home', 'హోమ్')) { setLocation('/'); return; }
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
     if (cat === 'Market News') { setLocation('/market-news'); return; }
     
@@ -140,11 +148,18 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     onCategoryChange?.(id || 'All');
     if (id) setLocation(`/news?category=${id}`); else setLocation('/');
   };
-
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery?.trim();
     if (!query) return;
+
+    if (location.startsWith('/telugu')) {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
+      window.location.href = `/news?search=${encodeURIComponent(query)}`;
+      return;
+    }
     
     if (onSearchChange) {
       onSearchChange(query);
@@ -158,7 +173,15 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     e.preventDefault();
     const query = mobileSearchQuery?.trim();
     if (!query) return;
-    
+
+    if (location.startsWith('/telugu')) {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
+      window.location.href = `/news?search=${encodeURIComponent(query)}`;
+      return;
+    }
+
     if (onSearchChange) {
       onSearchChange(query);
       setMobileSearchOpen(false);
@@ -242,7 +265,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
             <Button variant="ghost" size="icon" onClick={() => setMenuOpen(true)} className="text-gray-700 hover:text-[var(--pf-orange)] transition-colors"><Menu className="h-6 w-6" /></Button>
           </div>
           <div className="flex-1 flex md:justify-center justify-center overflow-hidden">
-            <Link href="/" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <div onClick={() => handleCat(t('Home', 'హోమ్'))}>
               <div className="flex flex-col items-center cursor-pointer group max-w-full">
                 <div className="flex items-center gap-2 md:gap-4 max-w-full">
                   <div className="relative shrink-0">
@@ -260,7 +283,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                   </div>
                 </div>
               </div>
-            </Link>
+            </div>
           </div>
           {/* Mobile search icon */}
           <div className="md:hidden">
