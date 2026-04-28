@@ -192,6 +192,16 @@ async def _seed_defaults():
                 "scraper_config": {"max_articles": 60, "fetch_full_content": True, "request_delay": 0.8},
             },
             {
+                "name": "GreatAndhra Telugu",
+                "url": "https://telugu.greatandhra.com",
+                "language": "te",
+                "scraper_type": "greatandhra",
+                "is_enabled": True,
+                "credibility_score": 0.7,
+                "priority": 6,
+                "scraper_config": {"max_articles": 60, "fetch_full_content": True, "request_delay": 0.8},
+            },
+            {
                 "name": "Eenadu",
                 "url": "https://www.eenadu.net",
                 "language": "te",

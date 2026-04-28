@@ -148,7 +148,9 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
                 (14, "GNews_US"),
                 (15, "GNews_Biz"),
                 (16, "GNews_Tech"),
-                (17, "GNews_India")
+                (17, "GNews_India"),
+                (5,  "GA_Eng"),
+                (19, "GA_Tel")
             ]
             
             for sid, label in priority_sources:
