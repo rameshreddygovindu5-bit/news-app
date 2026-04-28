@@ -124,7 +124,10 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      
       if (cat === 'Wishes') { window.location.href = '/wishes'; return; }
+      if (cat === 'Market News') { window.location.href = '/market-news'; return; }
+      
       const id = cat === t('Home', 'హోమ్') ? '' : cat;
       window.location.href = id ? `/news?category=${id}` : '/';
       return;

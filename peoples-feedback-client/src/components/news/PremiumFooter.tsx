@@ -123,15 +123,15 @@ export function PremiumFooter() {
             <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--pf-saffron)] mb-5">{t("Sections", "విభాగాలు")}</h4>
             <ul className="space-y-3 text-[13px]">
               <li>
-                <Link href="/" className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
+                <a href="/" className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
                   {t("Home", "హోమ్")}
-                </Link>
+                </a>
               </li>
               {cats.map(cat => (
                 <li key={cat}>
-                  <Link href={`/news?category=${cat}`} className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
+                  <a href={`/news?category=${cat}`} className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
                     {cat}
-                  </Link>
+                  </a>
                 </li>
               ))}
               <li>

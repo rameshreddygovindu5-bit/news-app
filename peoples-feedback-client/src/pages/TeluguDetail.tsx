@@ -192,7 +192,7 @@ export default function TeluguDetail() {
         {/* ── Breadcrumb ── */}
         <div className="max-w-4xl mx-auto px-4 mb-6">
           <nav className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-medium">
-            <Link href="/" className="hover:text-[var(--pf-navy)] transition-colors">హోమ్</Link>
+            <a href="/" className="hover:text-[var(--pf-navy)] transition-colors">హోమ్</a>
             <ChevronRight className="w-3 h-3" />
             <Link href="/telugu" className="hover:text-[var(--pf-navy)] transition-colors">తెలుగు వార్తలు</Link>
             <ChevronRight className="w-3 h-3" />
