@@ -156,9 +156,9 @@ export default function NewsDetail() {
       <main className="pt-6 pb-20">
         {/* ── Article header ── */}
         <header className="max-w-4xl mx-auto px-6 mb-10">
-          {/* FIX: Link is <a> in wouter — no extra <a> inside */}
+          {/* Dynamic Back to Newsroom Link */}
           <Link
-            href="/"
+            href={article.source_id === 18 ? "/market-news" : (article.category ? `/news?category=${article.category}` : "/")}
             className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400 hover:text-[var(--pf-saffron)] transition-colors mb-6"
           >
             <ArrowLeft className="w-3 h-3" /> Back to Newsroom
