@@ -277,7 +277,8 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
               const isActiveMain = isDirect && (
                 (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home')) ||
                 selectedCategory === main.path ||
-                (main.path === 'తెలుగు వార్తలు' && location === '/telugu')
+                (main.path === 'తెలుగు వార్తలు' && location === '/telugu') ||
+                (main.path === 'Market News' && location === '/market-news')
               );
               const hasActiveChild = !isDirect && main.items?.some((sub: string) => selectedCategory === sub);
               return (
