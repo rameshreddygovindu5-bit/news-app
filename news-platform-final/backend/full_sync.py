@@ -33,7 +33,7 @@ ARTICLE_COLS_STR = ", ".join(ARTICLE_COLS)
 
 def full_sync():
     print("=" * 60)
-    print("  FULL BIDIRECTIONAL SYNC — Local ↔ AWS")
+    print("  FULL BIDIRECTIONAL SYNC - Local <-> AWS")
     print("=" * 60)
 
     local_conn = sqlite3.connect('newsagg.db')
@@ -50,13 +50,13 @@ def full_sync():
             connect_timeout=30
         )
         aws_cur = aws_conn.cursor()
-        print("✅ Connected to AWS PostgreSQL")
+        print("OK Connected to AWS PostgreSQL")
     except Exception as e:
-        print(f"❌ Cannot connect to AWS: {e}")
+        print(f"ERR Cannot connect to AWS: {e}")
         return
 
     try:
-        # ── 1. Sync Categories ────────────────────────────────────────
+        # -- 1. Sync Categories ----------------------------------------
         print("\n[1/5] Syncing categories...")
         local_cur.execute("SELECT name, slug, description, is_active, article_count FROM categories")
         cats = local_cur.fetchall()
@@ -65,9 +65,9 @@ def full_sync():
                 "INSERT INTO categories (name, slug, description, is_active, article_count) VALUES %s "
                 "ON CONFLICT (name) DO UPDATE SET is_active=EXCLUDED.is_active, article_count=EXCLUDED.article_count",
                 [(c[0], c[1], c[2], bool(c[3]), c[4]) for c in cats])
-            print(f"   → {len(cats)} categories synced")
+            print(f"   -> {len(cats)} categories synced")
 
-        # ── 2. Sync Sources ──────────────────────────────────────────
+        # -- 2. Sync Sources ------------------------------------------
         print("[2/5] Syncing sources...")
         local_cur.execute("SELECT id, name, url, scraper_type, language, is_enabled FROM news_sources")
         srcs = local_cur.fetchall()
@@ -76,9 +76,9 @@ def full_sync():
                 "INSERT INTO news_sources (id, name, url, scraper_type, language, is_enabled) VALUES %s "
                 "ON CONFLICT (id) DO UPDATE SET is_enabled=EXCLUDED.is_enabled, name=EXCLUDED.name, url=EXCLUDED.url",
                 [(s[0], s[1], s[2], s[3], s[4], bool(s[5])) for s in srcs])
-            print(f"   → {len(srcs)} sources synced")
+            print(f"   -> {len(srcs)} sources synced")
 
-        # ── 3. Ensure content_hash on all local articles ─────────────
+        # -- 3. Ensure content_hash on all local articles -------------
         print("[3/5] Ensuring content_hash on local articles...")
         local_cur.execute("SELECT id, original_title, original_content FROM news_articles WHERE content_hash IS NULL OR content_hash = ''")
         no_hash = local_cur.fetchall()
@@ -87,12 +87,12 @@ def full_sync():
                 h = hashlib.sha256(f"{row[1] or ''}{row[2] or ''}".encode()).hexdigest()
                 local_cur.execute("UPDATE news_articles SET content_hash = ? WHERE id = ?", (h, row[0]))
             local_conn.commit()
-            print(f"   → Generated hash for {len(no_hash)} articles")
+            print(f"   -> Generated hash for {len(no_hash)} articles")
         else:
-            print("   → All articles have content_hash ✓")
+            print("   -> All articles have content_hash OK")
 
-        # ── 4. Push Local → AWS (full upsert) ────────────────────────
-        print("[4/5] Pushing local articles → AWS...")
+        # -- 4. Push Local -> AWS (full upsert) ------------------------
+        print("[4/5] Pushing local articles -> AWS...")
         local_cur.execute(f"SELECT {ARTICLE_COLS_STR} FROM news_articles WHERE flag != 'D'")
         local_rows = local_cur.fetchall()
         
@@ -139,16 +139,36 @@ def full_sync():
             """
             # Batch in chunks of 200
             batch_size = 200
+            pushed_count = 0
+            err_count = 0
             for i in range(0, len(clean_rows), batch_size):
                 batch = clean_rows[i:i + batch_size]
-                execute_values(aws_cur, SQL, batch)
-                print(f"   → Pushed batch {i // batch_size + 1} ({len(batch)} articles)")
+                try:
+                    execute_values(aws_cur, SQL, batch)
+                    pushed_count += len(batch)
+                except Exception as e:
+                    aws_conn.rollback()
+                    # If batch fails (e.g. slug conflict), try one by one in this batch
+                    for row in batch:
+                        try:
+                            execute_values(aws_cur, SQL, [row])
+                            pushed_count += 1
+                        except Exception as row_err:
+                            aws_conn.rollback()
+                            err_count += 1
+                            # Log the first few errors for visibility
+                            if err_count <= 5:
+                                url_snippet = str(row[3])[:50] if row[3] else "No URL"
+                                print(f"   ! Skip article due to conflict: {url_snippet}... Error: {str(row_err).split('\n')[0]}")
+                
+                if (i // batch_size) % 5 == 0 or i + batch_size >= len(clean_rows):
+                    print(f"   -> Processed through {min(i + batch_size, len(clean_rows))} articles...")
             
             aws_conn.commit()
-            print(f"   → Total: {len(clean_rows)} articles pushed to AWS")
+            print(f"   -> Total: {pushed_count} articles pushed to AWS ({err_count} skipped due to conflicts)")
         
-        # ── 5. Pull AWS → Local (articles only on AWS) ───────────────
-        print("[5/5] Pulling AWS-only articles → local...")
+        # -- 5. Pull AWS -> Local (articles only on AWS) ---------------
+        print("[5/5] Pulling AWS-only articles -> local...")
         aws_cur.execute(f"SELECT {ARTICLE_COLS_STR} FROM news_articles WHERE flag != 'D'")
         aws_rows = aws_cur.fetchall()
         
@@ -176,13 +196,13 @@ def full_sync():
                         row_list[14] = json.dumps(row_list[14])
                     local_cur.execute(insert_sql, tuple(row_list))
                 except Exception as e:
-                    print(f"   ⚠ Skip article: {str(e)[:80]}")
+                    print(f"   ! Skip article: {str(e)[:80]}")
             local_conn.commit()
-            print(f"   → Pulled {len(new_from_aws)} new articles from AWS")
+            print(f"   -> Pulled {len(new_from_aws)} new articles from AWS")
         else:
-            print("   → No AWS-only articles to pull")
+            print("   -> No AWS-only articles to pull")
 
-        # ── Final Counts ─────────────────────────────────────────────
+        # -- Final Counts ---------------------------------------------
         local_cur.execute("SELECT COUNT(*) FROM news_articles WHERE flag IN ('A','Y')")
         local_total = local_cur.fetchone()[0]
         aws_cur.execute("SELECT COUNT(*) FROM news_articles WHERE flag IN ('A','Y')")
@@ -194,19 +214,19 @@ def full_sync():
         aws_top = aws_cur.fetchone()[0]
 
         print("\n" + "=" * 60)
-        print(f"  LOCAL  →  AI Processed: {local_total}  |  Top News: {local_top}")
-        print(f"  AWS    →  AI Processed: {aws_total}  |  Top News: {aws_top}")
+        print(f"  LOCAL  ->  AI Processed: {local_total}  |  Top News: {local_top}")
+        print(f"  AWS    ->  AI Processed: {aws_total}  |  Top News: {aws_top}")
         print("=" * 60)
 
         if local_top != aws_top:
-            print(f"\n⚠ Top News mismatch (Local={local_top}, AWS={aws_top})")
+            print(f"\n! Top News mismatch (Local={local_top}, AWS={aws_top})")
             print("  This should be resolved now that all flag/rank_score values were synced.")
 
         aws_conn.commit()
-        print("\n✅ Full bidirectional sync complete!")
+        print("\nOK Full bidirectional sync complete!")
 
     except Exception as e:
-        print(f"\n❌ Sync error: {e}")
+        print(f"\nERR Sync error: {e}")
         import traceback
         traceback.print_exc()
         try:

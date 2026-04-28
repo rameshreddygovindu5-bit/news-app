@@ -20,9 +20,10 @@ function AppContent() {
 }
 
 export default function App() {
+  const basename = window.location.hostname === 'localhost' ? '' : (process.env.PUBLIC_URL || '');
   return (
     <AuthProvider>
-      <BrowserRouter basename={process.env.PUBLIC_URL || ''}>
+      <BrowserRouter basename={basename}>
         <AppContent />
       </BrowserRouter>
     </AuthProvider>

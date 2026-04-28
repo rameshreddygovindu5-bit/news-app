@@ -31,14 +31,12 @@ _scheduler: BackgroundScheduler = None
 _pipeline_lock = threading.Lock()
 
 
-def _run_step(name, task_path, ignore_window: bool = False):
+def _run_step(name, task_path, ignore_window: bool = False, **kwargs):
     """Import and run a specific task function with time window guard."""
     try:
         from datetime import datetime, timezone, timedelta
         now_utc = datetime.now(timezone.utc)
-        now_ist_hour = (now_utc + timedelta(hours=5, minutes=30)).hour
-        now_est_hour = (now_utc - timedelta(hours=5)).hour
-
+        
         # Window check: removed to enable 24/7 automation
         pass
 
@@ -49,10 +47,10 @@ def _run_step(name, task_path, ignore_window: bool = False):
         func = getattr(mod, func_name)
         
         # Pass ignore_window to the function if it's the scrape task
-        if "scrape" in name.lower():
+        if "scrape" in name.lower() and "scrape_all" in task_path:
             result = func(ignore_window=ignore_window)
         else:
-            result = func()
+            result = func(**kwargs)
         logger.info(f"[SCHED] {name} done: {result}")
     except Exception as e:
         logger.error(f"[SCHED] {name} failed: {e}")
@@ -140,6 +138,25 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
                 id="scrape_job", name="Scraping",
             )
             logger.info(f"[SCHED] ✓ Scraping: minute={settings.SCHEDULE_SCRAPE_MINUTES}")
+            
+            # Finviz Special Schedule (Source ID 18)
+            # 7 AM - 6 PM EST: Every 30 mins
+            _scheduler.add_job(
+                _run_step,
+                CronTrigger(hour='7-17', minute='0,30', timezone='US/Eastern'),
+                args=["finviz_day", "app.tasks.celery_app.scrape_source"],
+                kwargs={"ignore_window": True, "source_id": 18},
+                id="finviz_day_job", name="Finviz Market Hours",
+            )
+            # 6 PM - 7 AM EST: Every 3 hours
+            _scheduler.add_job(
+                _run_step,
+                CronTrigger(hour='0,3,6,18,21', minute='0', timezone='US/Eastern'),
+                args=["finviz_night", "app.tasks.celery_app.scrape_source"],
+                kwargs={"ignore_window": True, "source_id": 18},
+                id="finviz_night_job", name="Finviz After Hours",
+            )
+            logger.info("[SCHED] ✓ Finviz special schedules registered (US/Eastern)")
 
         # AI Processing — respects SCHEDULE_AI_MINUTES from .env
         if settings.SCHEDULE_AI_ENABLED:

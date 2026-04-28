@@ -44,6 +44,7 @@ class ScraperTypeEnum(str, Enum):
     TELUGU123 = "telugu123"
     TELUGUTIMES_TELUGU = "telugutimes telugu"
     GOOGLENEWS = "googlenews"
+    FINVIZ = "finviz"
     OTHER = "other"
 
 class RoleEnum(str, Enum):

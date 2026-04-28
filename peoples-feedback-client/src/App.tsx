@@ -10,6 +10,7 @@ import NewsDetail from "@/pages/NewsDetail";
 import Telugu from "@/pages/Telugu";
 import Hindi from "@/pages/Hindi";
 import TeluguDetail from "@/pages/TeluguDetail";
+import MarketNews from "@/pages/MarketNews";
 import Wishes from "@/pages/Wishes";
 import NotFound from "@/pages/NotFound";
 
@@ -18,6 +19,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/news" component={News} />
+      <Route path="/market-news" component={MarketNews} />
       <Route path="/news/:idOrSlug" component={NewsDetail} />
       <Route path="/telugu" component={Telugu} />
       <Route path="/hindi" component={Hindi} />

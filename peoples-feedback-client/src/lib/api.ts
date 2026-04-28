@@ -37,6 +37,7 @@ export const newsApi = {
   getArticles: (p: {
     page?: number; page_size?: number; category?: string; keyword?: string;
     lang?: string; flag?: string; flags?: string; telugu_page?: string;
+    source_id?: number;
   }) => {
     const { flag, flags: explicitFlags, ...rest } = p;
     // Explicit `flags` wins → else single `flag` → else default A,Y

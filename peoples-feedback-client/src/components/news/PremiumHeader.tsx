@@ -134,6 +134,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     }
 
     if (cat === 'Wishes') { setLocation('/wishes'); return; }
+    if (cat === '/market-news') { setLocation('/market-news'); return; }
     
     const id = cat === 'Home' ? '' : cat;
     onCategoryChange?.(id || 'All');
@@ -159,7 +160,10 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
   // FIX 5: Build menu config dynamically from active categories only
   const menuConfig = useMemo(() => {
     const catSet = new Set(activeCategories);
-    const items: any[] = [{ name: 'Home', path: 'Home' }];
+    const items: any[] = [
+      { name: 'Home', path: 'Home' },
+      { name: 'Market News', path: '/market-news' }
+    ];
     
     const politicsWorld = ['Politics', 'World', 'Events'].filter(c => catSet.has(c));
     if (politicsWorld.length > 0) items.push({ name: 'Politics & World', items: politicsWorld });
@@ -311,6 +315,11 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
                   ${(!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 {t("Home", "హోమ్")}
+              </button>
+              <button onClick={() => handleCat('/market-news')}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
+                  ${selectedCategory === 'Market News' ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
+                Market News
               </button>
               {activeCategories.filter(c => c !== 'Home').map(cat => (
                 <button key={cat} onClick={() => handleCat(cat)}
