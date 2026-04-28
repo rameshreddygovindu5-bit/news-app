@@ -139,24 +139,37 @@ def start_scheduler(run_immediately: bool = True, enable_intervals: bool = True)
             )
             logger.info(f"[SCHED] ✓ Scraping: minute={settings.SCHEDULE_SCRAPE_MINUTES}")
             
-            # Finviz Special Schedule (Source ID 18)
+            # Priority Special Schedules (Finviz + Google News)
             # 7 AM - 6 PM EST: Every 30 mins
-            _scheduler.add_job(
-                _run_step,
-                CronTrigger(hour='7-17', minute='0,30', timezone='US/Eastern'),
-                args=["finviz_day", "app.tasks.celery_app.scrape_source"],
-                kwargs={"ignore_window": True, "source_id": 18},
-                id="finviz_day_job", name="Finviz Market Hours",
-            )
             # 6 PM - 7 AM EST: Every 3 hours
-            _scheduler.add_job(
-                _run_step,
-                CronTrigger(hour='0,3,6,18,21', minute='0', timezone='US/Eastern'),
-                args=["finviz_night", "app.tasks.celery_app.scrape_source"],
-                kwargs={"ignore_window": True, "source_id": 18},
-                id="finviz_night_job", name="Finviz After Hours",
-            )
-            logger.info("[SCHED] ✓ Finviz special schedules registered (US/Eastern)")
+            priority_sources = [
+                (18, "Finviz"),
+                (13, "GNews_World"),
+                (14, "GNews_US"),
+                (15, "GNews_Biz"),
+                (16, "GNews_Tech"),
+                (17, "GNews_India")
+            ]
+            
+            for sid, label in priority_sources:
+                # DAY JOB: 7 AM - 5:59 PM EST (Every 30m)
+                _scheduler.add_job(
+                    _run_step,
+                    CronTrigger(hour='7-17', minute='0,30', timezone='US/Eastern'),
+                    args=[f"{label.lower()}_day", "app.tasks.celery_app.scrape_source"],
+                    kwargs={"ignore_window": True, "source_id": sid},
+                    id=f"{label.lower()}_day_job", name=f"{label} Market Hours",
+                )
+                # NIGHT JOB: 6 PM - 6:59 AM EST (Every 3 hours: 0,3,6,18,21)
+                _scheduler.add_job(
+                    _run_step,
+                    CronTrigger(hour='0,3,6,18,21', minute='0', timezone='US/Eastern'),
+                    args=[f"{label.lower()}_night", "app.tasks.celery_app.scrape_source"],
+                    kwargs={"ignore_window": True, "source_id": sid},
+                    id=f"{label.lower()}_night_job", name=f"{label} After Hours",
+                )
+            
+            logger.info(f"[SCHED] ✓ {len(priority_sources)} priority schedules registered (US/Eastern)")
 
         # AI Processing — respects SCHEDULE_AI_MINUTES from .env
         if settings.SCHEDULE_AI_ENABLED:
