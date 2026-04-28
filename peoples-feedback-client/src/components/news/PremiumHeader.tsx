@@ -65,13 +65,13 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
         document.body.appendChild(s);
       }
     };
-    const t = setTimeout(init, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(init, 0);
+    return () => clearTimeout(timer);
   }, [location]);
 
-  // Instant UI Localization helper
+  const isTe = location.startsWith('/telugu');
   const t = (en: string, te: string) => {
-    return location.startsWith('/telugu') ? te : en;
+    return isTe ? te : en;
   };
 
   const currentDate = new Intl.DateTimeFormat(location.startsWith('/telugu') ? 'te-IN' : 'en-US', { 
@@ -168,8 +168,6 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     setMobileSearchQuery("");
   };
 
-  const isTe = location.startsWith('/telugu');
-  const t = (en: string, te: string) => isTe ? te : en;
 
   // FIX 5: Build menu config dynamically from active categories only
   const menuConfig = useMemo(() => {
