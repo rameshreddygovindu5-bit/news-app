@@ -147,7 +147,7 @@ export default function NewsDetail() {
       <motion.div className="reading-progress" style={{ scaleX }} />
 
       <PremiumHeader
-        selectedCategory={cat}
+        selectedCategory={article.source_id === 18 ? "Market News" : cat}
         onCategoryChange={setCat}
         searchQuery={srch}
         onSearchChange={setSrch}
