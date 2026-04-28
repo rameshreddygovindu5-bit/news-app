@@ -69,47 +69,47 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     return () => clearTimeout(t);
   }, [location]);
 
-  const currentDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
-  const langs = [{ name: 'English', code: 'en' }, { name: 'తెలుగు', code: 'te' }];
+  // Instant UI Localization helper
+  const t = (en: string, te: string) => {
+    return location.startsWith('/telugu') ? te : en;
+  };
+
+  const currentDate = new Intl.DateTimeFormat(location.startsWith('/telugu') ? 'te-IN' : 'en-US', { 
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
+  }).format(new Date());
+
+  const langs = [
+    { name: 'English', code: 'en' }, 
+    { name: 'తెలుగు', code: 'te' }
+  ];
 
   useEffect(() => {
     // Set/clear googtrans cookie to match the current path.
-    // NO reload needed — Telugu articles already have telugu_title/telugu_content
-    // from AI processing, rendered directly via getTitle(article, 'te').
-    // Google Translate is only for minor UI chrome and will activate naturally.
+    // This is still used as a fallback for 3rd party widgets, 
+    // but the main UI now uses the instant t() helper.
     if (location.startsWith('/telugu')) {
       if (!document.cookie.includes('googtrans=/en/te')) {
         document.cookie = `googtrans=/en/te; path=/;`;
         document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
-        // Programmatically trigger Google Translate if already loaded
-        try {
-          const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
-          if (sel) { sel.value = 'te'; sel.dispatchEvent(new Event('change')); }
-        } catch {}
       }
     } else if (!location.startsWith('/hindi') && document.cookie.includes('googtrans=/en/te')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-      // Programmatically reset Google Translate if loaded
-      try {
-        const sel = document.querySelector('.goog-te-combo') as HTMLSelectElement;
-        if (sel) { sel.value = 'en'; sel.dispatchEvent(new Event('change')); }
-      } catch {}
     }
   }, [location]);
 
   const switchLang = (code: string) => {
+    // Clear all translation state first
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+    
     if (code === 'te') {
       document.cookie = `googtrans=/en/te; path=/;`;
       document.cookie = `googtrans=/en/te; path=/; domain=${window.location.hostname};`;
       setLocation('/telugu');
     } else {
-      // Leaving Telugu/Hindi → hard reload to clear Google Translate DOM mutations
-      if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
-        window.location.href = '/';
-      }
+      // Leaving Telugu/Hindi -> full redirect to ensure clean state
+      window.location.href = '/';
     }
   };
 
@@ -117,18 +117,15 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
-    if (cat === 'తెలుగు వార్తలు') { 
-      // Cookie will be set by the useEffect when location changes to /telugu
-      setLocation('/telugu');
-      return; 
-    }
+    if (cat === t('Home', 'హోమ్')) { setLocation('/'); return; }
+    if (cat === 'తెలుగు వార్తలు') { setLocation('/telugu'); return; }
     
     // Leaving Telugu/Hindi → must hard reload to undo Google Translate DOM changes
     if (location.startsWith('/telugu') || location.startsWith('/hindi')) {
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
       if (cat === 'Wishes') { window.location.href = '/wishes'; return; }
-      const id = cat === 'Home' ? '' : cat;
+      const id = cat === t('Home', 'హోమ్') ? '' : cat;
       window.location.href = id ? `/news?category=${id}` : '/';
       return;
     }
@@ -171,33 +168,33 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
     setMobileSearchQuery("");
   };
 
+  const isTe = location.startsWith('/telugu');
+  const t = (en: string, te: string) => isTe ? te : en;
+
   // FIX 5: Build menu config dynamically from active categories only
   const menuConfig = useMemo(() => {
     const catSet = new Set(activeCategories);
     const items: any[] = [
-      { name: 'Home', path: 'Home' },
-      { name: 'Market News', path: 'Market News' }
+      { name: t('Home', 'హోమ్'), path: t('Home', 'హోమ్') },
+      { name: t('Market News', 'మార్కెట్ వార్తలు'), path: 'Market News' }
     ];
     
     const politicsWorld = ['Politics', 'World', 'Events'].filter(c => catSet.has(c));
-    if (politicsWorld.length > 0) items.push({ name: 'Politics & World', items: politicsWorld });
+    if (politicsWorld.length > 0) items.push({ name: t('Politics & World', 'రాజకీయాలు & ప్రపంచం'), items: politicsWorld });
     
     const bizTech = ['Business', 'Tech', 'Science', 'Sports'].filter(c => catSet.has(c));
-    if (bizTech.length > 0) items.push({ name: 'Business & Tech', items: bizTech });
+    if (bizTech.length > 0) items.push({ name: t('Business & Tech', 'బిజినెస్ & టెక్'), items: bizTech });
     
     const lifestyle = ['Entertainment', 'Health'].filter(c => catSet.has(c));
-    if (lifestyle.length > 0) items.push({ name: 'Lifestyle', items: lifestyle });
+    if (lifestyle.length > 0) items.push({ name: t('Lifestyle', 'జీవనశైలి'), items: lifestyle });
     
     const insights = ['Surveys', 'Polls'].filter(c => catSet.has(c));
-    if (insights.length > 0) items.push({ name: 'Insights & Polls', items: insights });
+    if (insights.length > 0) items.push({ name: t('Insights & Polls', 'సర్వేలు & పోల్స్'), items: insights });
     
-    items.push({ name: 'తెలుగు వార్తలు', path: 'తెలుగు వార్తలు', isSpecial: true });
-    items.push({ name: 'Wishes', path: 'Wishes', isWishes: true });
+    items.push({ name: t('Telugu News', 'తెలుగు వార్తలు'), path: 'తెలుగు వార్తలు', isSpecial: true });
+    items.push({ name: t('Wishes', 'శుభాకాంక్షలు'), path: 'Wishes', isWishes: true });
     return items;
-  }, [activeCategories]);
-  
-  const isTe = location.startsWith('/telugu');
-  const t = (en: string, te: string) => isTe ? te : en;
+  }, [activeCategories, isTe]);
 
   return (
     <header className="flex flex-col w-full z-50">
@@ -212,7 +209,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--pf-green)] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--pf-green)]"></span>
             </span>
-            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--pf-green)]">Live</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--pf-green)]">{t('Live', 'లైవ్')}</span>
             <div className="w-px h-3 bg-white/20 mx-1"></div>
             <span className="text-white/90 font-bold">{currentDate}</span>
           </div>
@@ -232,7 +229,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           <div id="google_translate_element" className="hidden" />
           <span className="text-white/90 font-bold italic tracking-wider flex items-center gap-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
             <span className="w-1.5 h-1.5 bg-[var(--pf-saffron)] rounded-full animate-pulse shadow-[0_0_8px_var(--pf-saffron)]"></span>
-            Empowering Every Voice
+            {t('Empowering Every Voice', 'ప్రతి గొంతుకకు సాధికారత')}
           </span>
         </div>
       </div>
@@ -256,7 +253,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
                     </h1>
                     <div className="hidden sm:flex items-center gap-2 md:gap-3 mt-1 md:mt-2">
                       <div className="h-0.5 w-4 md:w-8 bg-gradient-to-r from-[var(--pf-orange)] to-[var(--pf-pink)]"></div>
-                      <span className="text-[7px] md:text-[10px] font-bold tracking-[0.1em] md:tracking-[0.2em] text-transparent bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)] bg-clip-text uppercase whitespace-nowrap">Empowering Every Voice</span>
+                      <span className="text-[7px] md:text-[10px] font-bold tracking-[0.1em] md:tracking-[0.2em] text-transparent bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)] bg-clip-text uppercase whitespace-nowrap">{t('Empowering Every Voice', 'ప్రతి గొంతుకకు సాధికారత')}</span>
                       <div className="h-0.5 w-4 md:w-8 bg-gradient-to-r from-[var(--pf-green)] to-[var(--pf-teal)]"></div>
                     </div>
                   </div>
@@ -289,7 +286,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
             {menuConfig.map((main: any) => {
               const isDirect = !!main.path;
               const isActiveMain = isDirect && (
-                (main.path === 'Home' && (!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home')) ||
+                (main.path === t('Home', 'హోమ్') && (!selectedCategory || selectedCategory === 'All' || selectedCategory === t('Home', 'హోమ్'))) ||
                 selectedCategory === main.path ||
                 (main.path === 'తెలుగు వార్తలు' && location === '/telugu') ||
                 (main.path === 'Market News' && location === '/market-news')
@@ -326,7 +323,7 @@ export function PremiumHeader({ selectedCategory, onCategoryChange, searchQuery,
           {/* FIX 3: Mobile: flat scrollable pill bar — no dropdowns, all categories visible */}
           <nav className="md:hidden flex-1 overflow-x-auto no-scrollbar">
             <div className="flex items-center gap-1.5 px-1 min-w-max">
-              <button onClick={() => handleCat('Home')}
+              <button onClick={() => handleCat(t('Home', 'హోమ్'))}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all border
                   ${(!selectedCategory || selectedCategory === 'All' || selectedCategory === 'Home') ? 'bg-india-flag text-[var(--pf-navy)] border-zinc-200 shadow-md ring-1 ring-zinc-200' : 'bg-zinc-100 text-zinc-600 border-zinc-50'}`}>
                 {t("Home", "హోమ్")}

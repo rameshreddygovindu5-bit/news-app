@@ -94,12 +94,12 @@ export function PremiumFooter() {
                   Peoples Feedback
                 </h2>
                 <span className="text-[10px] font-bold tracking-[0.2em] text-[var(--pf-saffron)] uppercase">
-                  Empowering Every Voice
+                  {t('Empowering Every Voice', 'ప్రతి గొంతుకకు సాధికారత')}
                 </span>
               </div>
             </Link>
             <p className="text-sm leading-relaxed text-zinc-300 max-w-xs">
-              India's trusted platform for transparent community news and public accountability. Delivering truth, driving progress.
+              {t("India's trusted platform for transparent community news and public accountability. Delivering truth, driving progress.", "భారతదేశం యొక్క విశ్వసనీయ వేదిక. పారదర్శకమైన కమ్యూనిటీ వార్తలు మరియు ప్రజా జవాబుదారీతనం కోసం.")}
             </p>
             {/* Social links — FIX: now have actual hrefs */}
             <div className="flex items-center gap-3">
@@ -124,7 +124,7 @@ export function PremiumFooter() {
             <ul className="space-y-3 text-[13px]">
               <li>
                 <Link href="/" className="text-zinc-400 hover:text-white hover:translate-x-1 transition-all inline-block">
-                  Home
+                  {t("Home", "హోమ్")}
                 </Link>
               </li>
               {cats.map(cat => (
@@ -141,7 +141,7 @@ export function PremiumFooter() {
               </li>
               <li>
                 <Link href="/wishes" className="text-rose-400 hover:text-white transition-all inline-block font-bold">
-                  Wishes & Greetings
+                  {t("Wishes & Greetings", "శుభాకాంక్షలు")}
                 </Link>
               </li>
             </ul>
@@ -169,7 +169,7 @@ export function PremiumFooter() {
                 {t("The Morning Brief", "మార్నింగ్ బ్రీఫ్")}
               </h4>
               <p className="text-sm text-zinc-300 mb-5 leading-relaxed">
-                Important stories from India and the world, delivered every morning.
+                {t("Important stories from India and the world, delivered every morning.", "భారతదేశం మరియు ప్రపంచం నుండి ముఖ్యమైన వార్తలు, ప్రతి ఉదయం మీ ముందుకు.")}
               </p>
               <div className="flex gap-2">
                 <input
@@ -177,7 +177,7 @@ export function PremiumFooter() {
                   placeholder="your@email.com"
                 />
                 <button className="bg-[var(--pf-saffron)] hover:bg-[var(--pf-orange)] text-white font-bold text-[11px] uppercase px-5 py-2.5 rounded-lg tracking-wider transition-colors whitespace-nowrap">
-                  Subscribe
+                  {t("Subscribe", "సబ్స్క్రైబ్")}
                 </button>
               </div>
             </div>
